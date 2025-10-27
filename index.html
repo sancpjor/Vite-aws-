@@ -1,13 +1,109 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZAZ Football Tickets - Competencia de Entradas</title>
+    </head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🏆 ZAZ Football Tickets</h1>
+            <p>Competencia de Entradas para AWS Builders</p>
+        </header>
+
+        <section class="clubs-section">
+            <div class="club-card zaragoza">
+                <div class="club-logo">RZ</div>
+                <h3>Real Zaragoza</h3>
+                <p>Entradas disponibles para partidos en casa</p>
+            </div>
+            <div class="club-card huesca">
+                <div class="club-logo">SDH</div>
+                <h3>SD Huesca</h3>
+                <p>Entradas disponibles para partidos en casa</p>
+            </div>
+        </section>
+
+        <main class="main-content">
+            <div class="competition-status status-active">
+                <h2>🎯 Competencia Activa</h2>
+                <p><strong>Próximo partido:</strong> Real Zaragoza vs Valencia CF</p>
+                <p><strong>Fecha:</strong> 5 de Noviembre, 2025 - 20:00</p>
+                <p><strong>Entradas disponibles:</strong> 8 de 10</p>
+                <div class="countdown">
+                    ⏰ Tiempo restante para participar: 2 días, 14 horas
+                </div>
+            </div>
+
+            <div class="competition-info">
+                <div class="info-card">
+                    <h3>📝 Participantes</h3>
+                    <p><strong>15</strong> AWS builders registrados</p>
+                    <p>Última entrada: hace 2 horas</p>
+                </div>
+                <div class="info-card">
+                    <h3>🎲 Sorteo</h3>
+                    <p>Se realizará <strong>automáticamente</strong></p>
+                    <p>3 días antes del partido</p>
+                </div>
+                <div class="info-card">
+                    <h3>🏆 Ganadores</h3>
+                    <p>Se notificarán por <strong>Slack</strong></p>
+                    <p>y recibirán las entradas por email</p>
+                </div>
+                <div class="info-card">
+                    <h3>📊 Estadísticas</h3>
+                    <p><strong>127</strong> entradas repartidas</p>
+                    <p><strong>89</strong> builders han participado</p>
+                </div>
+            </div>
+
+            <div class="cta-section">
+                <button class="btn" onclick="enterCompetition()">
+                    🎫 Participar en la Competencia
+                </button>
+                <p style="margin-top: 15px; color: #666;">
+                    <small>* Solo empleados AWS pueden participar</small>
+                </p>
+            </div>
+        </main>
+
+        <section class="rules-section">
+            <h2>📋 Reglas de la Competencia</h2>
+            <ul class="rules-list">
+                <li>Solo empleados AWS pueden participar en la competencia</li>
+                <li>La inscripción cierra 3-4 días antes de cada partido</li>
+                <li>Los ganadores son seleccionados automáticamente de forma aleatoria</li>
+                <li>Si ganas, no podrás participar en las próximas 2-3 competencias</li>
+                <li>Si no hay suficientes participantes, se te incluirá nuevamente</li>
+                <li>Las entradas se envían por email 3 días antes del partido</li>
+                <li>Si no se asignan todas las entradas, se hará un segundo sorteo</li>
+                <li>El proceso owner (Sinead) será notificado de todos los ganadores</li>
+            </ul>
+        </section>
+
+        <footer class="footer">
+            <p>© 2025 AWS ZAZ Football Partnership | Promoviendo la inclusión y conexión del personal</p>
+            <p><small>Contacto: Sinead (Process Owner) | Desarrollado para AWS Builders</small></p>
+        </footer>
+    </div>
+
+    <script>
+        function enterCompetition() {
+            if (confirm('¿Confirmas tu participación en la competencia de entradas para Real Zaragoza vs Valencia CF?')) {
+                alert('¡Registrado exitosamente! Recibirás una notificación por Slack con los resultados del sorteo.');
+            }
+        }
+
+        function updateCountdown() {
+            const countdownElement = document.querySelector('.countdown');
+            if (countdownElement) {
+                // Lógica de countdown real iría aquí
+            }
+        }
+
+        setInterval(updateCountdown, 60000);
+    </script>
+</body>
 </html>
