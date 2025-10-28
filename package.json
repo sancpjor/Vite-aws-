@@ -15,7 +15,9 @@
     "aws-amplify": "^6.15.7",
     "firebase": "^12.4.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@aws-amplify/api": "^6.0.0",
+    "@aws-amplify/auth": "^6.0.0"
   },
   "devDependencies": {
     "@aws-amplify/backend": "^1.5.0",
@@ -38,3 +40,4 @@
     "vite": "^5.4.10"
   }
 }
+
