@@ -1,33 +1,35 @@
-import '@aws-amplify/ui-react/styles.css';
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from "react";
 import { Amplify, Auth, Hub } from 'aws-amplify';
-import awsconfig from './aws-exports.js';
+import awsconfig from './aws-exports.js'; // Si tienes Amplify configurado
 import type { Schema } from "../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
-import {
-  Button,
-  View,
-  Card,
-} from '@aws-amplify/ui-react';
+import './App.css';
 
-// Configuración de Amplify
-awsconfig.oauth.redirectSignIn = `${window.location.origin}/`;
-awsconfig.oauth.redirectSignOut = `${window.location.origin}/`;
-Amplify.configure(awsconfig);
+// Configuración de Amplify (si la tienes)
+if (awsconfig) {
+  awsconfig.oauth.redirectSignIn = `${window.location.origin}/`;
+  awsconfig.oauth.redirectSignOut = `${window.location.origin}/`;
+  Amplify.configure(awsconfig);
+}
 
 const client = generateClient<Schema>();
 
 function App() {
   // Estados para autenticación
   const [user, setUser] = useState(null);
-  // Estados para todos
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  // Estados para todos (si los tienes)
   const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
 
   // Función para obtener usuario
   function getUser() {
     return Auth.currentAuthenticatedUser()
       .then((userData) => userData)
-      .catch(() => console.log("Not signed in"));
+      .catch(() => {
+        console.log("Not signed in");
+        return null;
+      });
   }
 
   // Effect para autenticación
@@ -35,34 +37,47 @@ function App() {
     Hub.listen("auth", ({ payload: { event, data } }) => {
       switch (event) {
         case "signIn":
-          console.log(event);
-          console.log(data);
-          getUser().then((userData) => setUser(userData));
+          console.log('Sign in event:', event, data);
+          getUser().then((userData) => {
+            setUser(userData);
+            setIsAuthenticated(true);
+          });
           break;
         case "signOut":
           setUser(null);
-          setTodos([]); // Limpiar todos al cerrar sesión
+          setIsAuthenticated(false);
+          setTodos([]);
           break;
         case "signIn_failure":
           console.log("Sign in failure", data);
           break;
       }
     });
-    getUser().then((userData) => setUser(userData));
+    
+    // Verificar si ya hay usuario autenticado
+    getUser().then((userData) => {
+      if (userData) {
+        setUser(userData);
+        setIsAuthenticated(true);
+      }
+    });
   }, []);
 
   // Effect para cargar todos (solo si está autenticado)
   useEffect(() => {
-    if (user) {
+    if (isAuthenticated && user) {
       client.models.Todo.observeQuery().subscribe({
         next: (data) => setTodos([...data.items]),
       });
     }
-  }, [user]);
+  }, [isAuthenticated, user]);
 
   function createTodo() {
-    if (user) {
-      client.models.Todo.create({ content: window.prompt("Todo content") });
+    if (isAuthenticated) {
+      const content = window.prompt("Todo content");
+      if (content) {
+        client.models.Todo.create({ content });
+      }
     }
   }
 
@@ -70,37 +85,60 @@ function App() {
     Auth.signOut();
   }
 
+  function loginWithMidway() {
+    Auth.federatedSignIn({customProvider: 'FederateOIDC'});
+  }
+
   // Si no está autenticado, mostrar pantalla de login
-  if (!user) {
+  if (!isAuthenticated) {
     return (
-      <View className='App'>
-        <Card>
-          <h1>Please sign in to access your todos</h1>
-          <Button onClick={() => Auth.federatedSignIn({customProvider: 'FederateOIDC'})}>
-            Login with Midway
-          </Button>
-        </Card>
-      </View>
+      <div className="app-container">
+        <div className="auth-card">
+          <h1>🏆 ZAZ Football Tickets</h1>
+          <p>Competencia de Entradas para AWS Builders</p>
+          <div className="auth-section">
+            <h2>🔐 Autenticación requerida</h2>
+            <p>Inicia sesión con tu cuenta Amazon para acceder</p>
+            <button className="btn-primary" onClick={loginWithMidway}>
+              🔑 Iniciar Sesión con Midway
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  // Si está autenticado, mostrar la aplicación de todos
+  // Si está autenticado, mostrar la aplicación
   return (
-    <main>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>My todos</h1>
-        <Button onClick={signOut}>Sign Out</Button>
-      </div>
-      <button onClick={createTodo}>+ new</button>
-      <ul>
-        {todos.map((todo) => (
-          <li key={todo.id}>{todo.content}</li>
-        ))}
-      </ul>
-      <div>
-        🥳 App successfully hosted and authenticated with Midway!
-      </div>
-    </main>
+    <div className="app-container">
+      <header className="app-header">
+        <div className="user-info">
+          <span>👋 Hola, {user?.username || 'Usuario'}</span>
+          <button className="btn-secondary" onClick={signOut}>
+            🚪 Cerrar Sesión
+          </button>
+        </div>
+      </header>
+
+      <main className="main-content">
+        <h1>🎫 Mis Todos - ZAZ Football</h1>
+        <button className="btn-primary" onClick={createTodo}>
+          + Nuevo Todo
+        </button>
+        
+        <ul className="todos-list">
+          {todos.map((todo) => (
+            <li key={todo.id} className="todo-item">
+              {todo.content}
+            </li>
+          ))}
+        </ul>
+        
+        <div className="success-message">
+          🥳 App con Midway funcionando correctamente!
+        </div>
+      </main>
+    </div>
   );
 }
 
