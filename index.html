@@ -36,6 +36,73 @@
                     ⏰ Tiempo restante para participar: 2 días, 14 horas
                 </div>
             </div>
+            <!-- Modal de Login -->
+<div id="loginModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <div class="login-container">
+            <h2>🔐 Iniciar Sesión</h2>
+            <p>Inicia sesión con tu cuenta AWS para participar</p>
+            
+            <form id="loginForm">
+                <div class="input-group">
+                    <label for="email">Email corporativo:</label>
+                    <input type="email" id="email" name="email" placeholder="tu-usuario@amazon.com" required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="password">Contraseña:</label>
+                    <input type="password" id="password" name="password" placeholder="••••••••" required>
+                </div>
+                
+                <div class="login-options">
+                    <button type="button" class="btn-secondary" onclick="loginWithSSO()">
+                        🔑 Iniciar con SSO
+                    </button>
+                    <button type="submit" class="btn">
+                        ✅ Iniciar Sesión
+                    </button>
+                </div>
+            </form>
+            
+            <div class="login-help">
+                <p><small>¿Problemas para acceder? <a href="#" onclick="showHelp()">Contacta IT Support</a></small></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Usuario Logueado -->
+<div id="userModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <div class="user-info">
+            <h2>👋 ¡Hola, <span id="userName">Usuario</span>!</h2>
+            <p>¿Confirmas tu participación en la competencia?</p>
+            
+            <div class="competition-details">
+                <div class="detail-item">
+                    <strong>Partido:</strong> Real Zaragoza vs Valencia CF
+                </div>
+                <div class="detail-item">
+                    <strong>Fecha:</strong> 5 de Noviembre, 2025 - 20:00
+                </div>
+                <div class="detail-item">
+                    <strong>Entradas disponibles:</strong> 8 de 10
+                </div>
+            </div>
+            
+            <div class="participation-actions">
+                <button class="btn-secondary" onclick="closeModal('userModal')">
+                    ❌ Cancelar
+                </button>
+                <button class="btn" onclick="confirmParticipation()">
+                    🎫 Confirmar Participación
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
             <div class="competition-info">
                 <div class="info-card">
