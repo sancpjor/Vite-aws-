@@ -1,63 +1,39 @@
-import @aws-amplify/ui-react/styles.css;
+import { useEffect, useState } from "react";
+import type { Schema } from "../amplify/data/resource";
+import { generateClient } from "aws-amplify/data";
 
-import React, { useState, useEffect } from react;
-
-import { Amplify, Auth, Hub } from aws-amplify;
-
-import awsconfig from ./aws-exports.js;
-
-import {
-
-  Button,
-
-  View,
-
-  Card,
-
-} from @aws-amplify/ui-react;
-
-awsconfig.oauth.redirectSignIn = `${window.location.origin}/`;
-
-awsconfig.oauth.redirectSignOut = `${window.location.origin}/`;
-
-Amplify.configure(awsconfig);
+const client = generateClient<Schema>();
 
 function App() {
-  // Amazon Federate Midway athentication
-  const [user, setUser] = useState(null);
-  // getUser function
-  function getUser() {
-    return Auth.currentAuthenticatedUser()
-      .then((userData) => userData)
-      .catch(() => console.log("Not signed in"));
+  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
+
+  useEffect(() => {
+    client.models.Todo.observeQuery().subscribe({
+      next: (data) => setTodos([...data.items]),
+    });
+  }, []);
+
+  function createTodo() {
+    client.models.Todo.create({ content: window.prompt("Todo content") });
   }
 
-  // Use effect for auth
-  useEffect(() => {
-    Hub.listen("auth", ({ payload: { event, data } }) => {
-      switch (event) {
-        case "signIn":
-          console.log(event);
-          console.log(data);
-          getUser().then((userData) => setUser(userData));
-          console.log(user);
-          break;
-        case "signOut":
-          setUser(null);
-          break;
-        case "signIn_failure":
-          console.log("Sign in failure", data);
-          break;
-      }
-    });
-    getUser().then((userData) => setUser(userData));
-  }, []);
   return (
-    <View className='App'>
-      <Card>
-        <Button onClick={() => Auth.federatedSignIn({customProvider: 'FederateOIDC'})}>Login</Button>
-      </Card>
-    </View>
+    <main>
+      <h1>My todos</h1>
+      <button onClick={createTodo}>+ new</button>
+      <ul>
+        {todos.map((todo) => (
+          <li key={todo.id}>{todo.content}</li>
+        ))}
+      </ul>
+      <div>
+        🥳 App successfully hosted. Try creating a new todo.
+        <br />
+        <a href="https://docs.amplify.aws/react/start/quickstart/#make-frontend-updates">
+          Review next step of this tutorial.
+        </a>
+      </div>
+    </main>
   );
 }
 
