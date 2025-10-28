@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZAZ Football Tickets - Competencia de Entradas</title>
     <link rel="stylesheet" href="./src/index.css">
+    <script src="https://harmony.amazon.com/js/harmony.js"></script>
+    <script src="https://midway.amazon.com/js/amazon-idp.js"></script>
     </head>
 <body>
     <div class="container">
@@ -158,107 +160,51 @@
     </div>
 
     <script>
-  // Variables globales
-let currentUser = null;
-
 function enterCompetition() {
-    // Mostrar modal de login
-    document.getElementById('loginModal').style.display = 'block';
-}
-
-function closeModal(modalId) {
-    document.getElementById(modalId).style.display = 'none';
-}
-
-// Cerrar modal al hacer clic fuera
-window.onclick = function(event) {
-    const loginModal = document.getElementById('loginModal');
-    const userModal = document.getElementById('userModal');
+    // 1. Verificar que es empleado Amazon
+    const userEmail = harmony.api.getUserEmail();
     
-    if (event.target === loginModal) {
-        loginModal.style.display = 'none';
+    if (!userEmail.includes('@amazon.com')) {
+        alert('❌ Solo empleados Amazon');
+        return;
     }
-    if (event.target === userModal) {
-        userModal.style.display = 'none';
-    }
-}
-
-// Cerrar modal con X
-document.addEventListener('DOMContentLoaded', function() {
-    const closeButtons = document.querySelectorAll('.close');
-    closeButtons.forEach(button => {
-        button.onclick = function() {
-            this.closest('.modal').style.display = 'none';
-        }
-    });
-});
-
-// Manejar formulario de login
-document.addEventListener('DOMContentLoaded', function() {
-    const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
-        loginForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            
-            // Simulación de login
-            if (email.includes('@amazon.com') && password.length > 0) {
-                // Login exitoso
-                currentUser = {
-                    name: email.split('@')[0],
-                    email: email
-                };
-                
-                // Cerrar modal de login
-                closeModal('loginModal');
-                
-                // Mostrar modal de usuario
-                document.getElementById('userName').textContent = currentUser.name;
-                document.getElementById('userModal').style.display = 'block';
-                
-            } else {
-                alert('❌ Credenciales inválidas. Usa tu email corporativo @amazon.com');
-            }
-        });
-    }
-});
-
-function loginWithSSO() {
-    alert('🔄 Redirigiendo a AWS SSO...');
     
-    setTimeout(() => {
-        currentUser = {
-            name: 'Usuario AWS',
-            email: 'usuario@amazon.com'
-        };
-        
-        closeModal('loginModal');
-        document.getElementById('userName').textContent = currentUser.name;
-        document.getElementById('userModal').style.display = 'block';
-    }, 2000);
+    // 2. Mostrar datos del usuario
+    const userName = harmony.api.getUserName();
+    document.getElementById('userName').textContent = userName;
+    document.getElementById('userModal').style.display = 'block';
 }
 
 function confirmParticipation() {
-    if (currentUser) {
-        alert(`🎉 ¡Participación confirmada para ${currentUser.name}!\n\nRecibirás una notificación por Slack con los resultados del sorteo.`);
-        closeModal('userModal');
-    }
+    // 3. Guardar en la base de datos de Amazon
+    saveToAmazonDatabase();
 }
 
-function showHelp() {
-    alert('📞 Contacta IT Support:\n\n• Email: it-support@amazon.com\n• Slack: #it-help\n• Teléfono: +1-800-IT-HELP');
+function saveToAmazonDatabase() {
+    // Esta es la "magia" - hablar con SymphonyAPI
+    const xhr = new window.Amazon.IDP.xhr();
+    xhr.withCredentials = true;
+    
+    // Decirle a Amazon: "Guarda que Juan participó"
+    xhr.open('POST', 'https://symphonyapi-na.amazon.com/sentry/v2/competitions');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    
+    const data = {
+        user: harmony.api.getUserName(),
+        competition: 'zaragoza-valencia',
+        timestamp: new Date()
+    };
+    
+    xhr.onload = () => {
+        if (xhr.status === 200) {
+            alert('🎉 ¡Guardado en Amazon!');
+        } else {
+            alert('❌ Error guardando');
+        }
+    };
+    
+    xhr.send(JSON.stringify(data));
 }
-
-function updateCountdown() {
-    const countdownElement = document.querySelector('.countdown');
-    if (countdownElement) {
-        // Lógica de countdown real iría aquí
-    }
-}
-
-setInterval(updateCountdown, 60000);
 
     </script>
 </body>
