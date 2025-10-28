@@ -1,29 +1,19 @@
-import React, { useState, createContext, useContext, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import React, { useState, createContext, useContext, useEffect, useCallback } from "react";
+import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Quiz from './components/Quiz';
 import { getLeaderboard, getStats } from './services/quizAPI';
 
-// Create a context for user authentication
+// Types
 interface AuthContextType {
   isLoggedIn: boolean;
   userName: string;
   userEmail: string;
-  login: (email: string, password: string) => void;
+  userAlias: string;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  isLoading: boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Custom hook to use auth context
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-// Define interfaces locally
 interface LeaderboardEntry {
   id: string;
   alias: string;
@@ -44,42 +34,101 @@ interface QuizStats {
   completionRate: number;
 }
 
-// Amazon internal photo system
+interface LoginFormData {
+  email: string;
+  password: string;
+}
+
+// Constants
+const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
+const SESSION_STORAGE_KEY = 'quizSession';
+const LEADERBOARD_REFRESH_INTERVAL = 30000; // 30 seconds
+
+// Auth Context
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+// Utility Functions
 const getPlayerAvatar = (email: string, alias: string): string => {
   return `https://internal-cdn.amazon.com/badgephotos.amazon.com/?fullsizeimage=1&uid=${alias}`;
 };
 
-// Fast Avatar Component
+const extractAliasFromEmail = (email: string): string => {
+  return email.split('@')[0];
+};
+
+const validateLoginForm = (email: string, password: string): string | null => {
+  if (!email || !password) {
+    return 'Por favor ingresa email y contraseña';
+  }
+  
+  if (!AMAZON_EMAIL_REGEX.test(email)) {
+    return 'Por favor usa tu email corporativo de Amazon (@amazon.com)';
+  }
+  
+  if (password.length < 6) {
+    return 'La contraseña debe tener al menos 6 caracteres';
+  }
+  
+  return null;
+};
+
+// Components
+const LoadingSpinner: React.FC<{ size?: 'small' | 'medium' | 'large' }> = ({ size = 'medium' }) => {
+  const sizeMap = { small: '20px', medium: '40px', large: '60px' };
+  
+  return (
+    <div style={{
+      width: sizeMap[size],
+      height: sizeMap[size],
+      border: '4px solid rgba(255, 255, 255, 0.3)',
+      borderTop: '4px solid #00F5A0',
+      borderRadius: '50%',
+      animation: 'spin 1s linear infinite',
+      margin: '0 auto'
+    }} />
+  );
+};
+
 const FastAvatar: React.FC<{
   email: string;
   alias: string;
   isCurrentUser?: boolean;
   position?: number;
-}> = ({ email, alias, isCurrentUser = false, position = 0 }) => {
+  size?: number;
+}> = ({ email, alias, isCurrentUser = false, position = 0, size = 50 }) => {
   const [imgSrc, setImgSrc] = useState<string>(
-    `https://ui-avatars.com/api/?name=${alias}&background=667eea&color=ffffff&size=50&font-size=0.6&bold=true`
+    `https://ui-avatars.com/api/?name=${alias}&background=667eea&color=ffffff&size=${size}&font-size=0.6&bold=true`
   );
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const img = new Image();
     const amazonSrc = getPlayerAvatar(email, alias);
     
     const timeout = setTimeout(() => {
-      // Keep the fast backup image if Amazon photo takes too long
-    }, 1000);
+      setIsLoading(false);
+    }, 2000);
 
     img.onload = () => {
       clearTimeout(timeout);
       setImgSrc(amazonSrc);
+      setIsLoading(false);
     };
 
     img.onerror = () => {
       clearTimeout(timeout);
-      // Keep the backup image
+      setIsLoading(false);
     };
 
     img.src = amazonSrc;
-
     return () => clearTimeout(timeout);
   }, [email, alias]);
 
@@ -91,24 +140,276 @@ const FastAvatar: React.FC<{
 
   return (
     <div style={{
-      width: '50px',
-      height: '50px',
+      width: `${size}px`,
+      height: `${size}px`,
       borderRadius: '50%',
       overflow: 'hidden',
       border: `2px solid ${getBorderColor()}`,
       boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
       flexShrink: 0,
-      background: 'rgba(255, 255, 255, 0.1)'
+      background: 'rgba(255, 255, 255, 0.1)',
+      position: 'relative'
     }}>
+      {isLoading && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 1
+        }}>
+          <LoadingSpinner size="small" />
+        </div>
+      )}
       <img
         src={imgSrc}
         alt={`${alias} avatar`}
         style={{
           width: '100%',
           height: '100%',
-          objectFit: 'cover'
+          objectFit: 'cover',
+          opacity: isLoading ? 0.3 : 1,
+          transition: 'opacity 0.3s ease'
         }}
       />
+    </div>
+  );
+};
+
+const LoginForm: React.FC<{
+  onSubmit: (data: LoginFormData) => Promise<void>;
+  isLoading: boolean;
+}> = ({ onSubmit, isLoading }) => {
+  const [formData, setFormData] = useState<LoginFormData>({ email: '', password: '' });
+  const [error, setError] = useState<string>('');
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    setError('');
+    
+    const validationError = validateLoginForm(formData.email, formData.password);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    try {
+      await onSubmit(formData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
+    }
+  };
+
+  const handleInputChange = (field: keyof LoginFormData) => (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setFormData(prev => ({ ...prev, [field]: e.target.value }));
+    if (error) setError(''); // Clear error when user starts typing
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ width: '100%' }}>
+      {error && (
+        <div style={{
+          background: 'rgba(255, 107, 107, 0.2)',
+          border: '1px solid rgba(255, 107, 107, 0.5)',
+          borderRadius: '8px',
+          padding: '12px',
+          marginBottom: '20px',
+          color: '#FF6B6B',
+          fontSize: '0.9rem',
+          textAlign: 'center'
+        }}>
+          ❌ {error}
+        </div>
+      )}
+      
+      <div className="input-group" style={{ marginBottom: '20px' }}>
+        <label htmlFor="email" style={{ 
+          display: 'block', 
+          marginBottom: '8px', 
+          color: '#00F5A0',
+          fontWeight: '500'
+        }}>
+          Email corporativo:
+        </label>
+        <input 
+          type="email" 
+          id="email" 
+          value={formData.email}
+          onChange={handleInputChange('email')}
+          placeholder="tu-usuario@amazon.com" 
+          required 
+          disabled={isLoading}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: '8px',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            background: 'rgba(255, 255, 255, 0.1)',
+            color: 'white',
+            fontSize: '1rem',
+            transition: 'all 0.3s ease',
+            opacity: isLoading ? 0.6 : 1
+          }}
+        />
+      </div>
+      
+      <div className="input-group" style={{ marginBottom: '25px' }}>
+        <label htmlFor="password" style={{ 
+          display: 'block', 
+          marginBottom: '8px', 
+          color: '#00F5A0',
+          fontWeight: '500'
+        }}>
+          Contraseña:
+        </label>
+        <input 
+          type="password" 
+          id="password" 
+          value={formData.password}
+          onChange={handleInputChange('password')}
+          placeholder="••••••••" 
+          required 
+          disabled={isLoading}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: '8px',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            background: 'rgba(255, 255, 255, 0.1)',
+            color: 'white',
+            fontSize: '1rem',
+            transition: 'all 0.3s ease',
+            opacity: isLoading ? 0.6 : 1
+          }}
+        />
+      </div>
+      
+      <button 
+        type="submit" 
+        disabled={isLoading}
+        style={{
+          width: '100%',
+          padding: '15px',
+          borderRadius: '10px',
+          border: 'none',
+          background: isLoading 
+            ? 'rgba(102, 126, 234, 0.5)' 
+            : 'linear-gradient(45deg, #00F5A0, #00D9F5)',
+          color: isLoading ? 'rgba(255, 255, 255, 0.7)' : '#1a1a1a',
+          fontSize: '1.1rem',
+          fontWeight: '600',
+          cursor: isLoading ? 'not-allowed' : 'pointer',
+          transition: 'all 0.3s ease',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '10px'
+        }}
+      >
+        {isLoading ? (
+          <>
+            <LoadingSpinner size="small" />
+            Iniciando sesión...
+          </>
+        ) : (
+          '✅ Iniciar Sesión'
+        )}
+      </button>
+    </form>
+  );
+};
+
+const Modal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}> = ({ isOpen, onClose, children }) => {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      className="modal" 
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        backdropFilter: 'blur(5px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        animation: 'fadeIn 0.3s ease-out'
+      }}
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(40, 40, 40, 0.95))',
+          padding: '30px',
+          borderRadius: '20px',
+          width: '90%',
+          maxWidth: '400px',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+          animation: 'slideIn 0.3s ease-out',
+          position: 'relative'
+        }}
+      >
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: '15px',
+            right: '20px',
+            background: 'none',
+            border: 'none',
+            color: 'rgba(255, 255, 255, 0.7)',
+            fontSize: '24px',
+            cursor: 'pointer',
+            padding: '5px',
+            borderRadius: '50%',
+            width: '35px',
+            height: '35px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.3s ease'
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+            e.currentTarget.style.color = 'white';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.background = 'none';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
+          }}
+        >
+          ×
+        </button>
+        {children}
+      </div>
     </div>
   );
 };
@@ -125,18 +426,13 @@ const HomePage: React.FC = () => {
     completionRate: 0
   });
   const [isLoadingRanking, setIsLoadingRanking] = useState<boolean>(true);
-  const { isLoggedIn, userName, userEmail, login, logout } = useAuth();
+  const { isLoggedIn, userName, userEmail, login, logout, isLoading: authLoading } = useAuth();
 
-  // Load leaderboard and stats when component mounts
-  useEffect(() => {
-    loadRankingData();
-  }, []);
-
-  const loadRankingData = async () => {
+  const loadRankingData = useCallback(async () => {
     try {
       setIsLoadingRanking(true);
       const [leaderboardData, statsData] = await Promise.all([
-        getLeaderboard(10), // Get top 10
+        getLeaderboard(10),
         getStats()
       ]);
       
@@ -147,34 +443,26 @@ const HomePage: React.FC = () => {
     } finally {
       setIsLoadingRanking(false);
     }
-  };
-
-  // Refresh ranking data every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(loadRankingData, 30000);
-    return () => clearInterval(interval);
   }, []);
 
-  const handleLogin = (email: string, _password: string): void => {
-    console.log('Login attempt:', { email, password: _password });
-    
-    if (email && _password) {
-      if (email.includes('@') && _password.length >= 1) {
-        login(email, _password);
-        setShowLoginModal(false);
-        setTimeout(loadRankingData, 1000);
-      } else {
-        alert('❌ Please enter a valid email and password');
-      }
-    } else {
-      alert('❌ Por favor ingresa email y contraseña');
-    }
+  useEffect(() => {
+    loadRankingData();
+  }, [loadRankingData]);
+
+  useEffect(() => {
+    const interval = setInterval(loadRankingData, LEADERBOARD_REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [loadRankingData]);
+
+  const handleLogin = async (formData: LoginFormData): Promise<void> => {
+    await login(formData.email, formData.password);
+    setShowLoginModal(false);
+    setTimeout(loadRankingData, 1000);
   };
 
   const handleQuizClick = (): void => {
     if (!isLoggedIn) {
       setShowLoginModal(true);
-      return;
     }
   };
 
@@ -195,194 +483,239 @@ const HomePage: React.FC = () => {
     return '#FF6B6B';
   };
 
-  interface LoginFormProps {
-    onSubmit: (email: string, password: string) => void;
-  }
-
-  const LoginForm: React.FC<LoginFormProps> = ({ onSubmit }) => {
-    const [email, setEmail] = useState<string>('');
-    const [password, setPassword] = useState<string>('');
-
-    const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
-      e.preventDefault();
-      console.log('Form submitted:', { email, password });
-      onSubmit(email, password);
-    };
-
-    return (
-      <form onSubmit={handleSubmit}>
-        <div className="input-group">
-          <label htmlFor="email">Email corporativo:</label>
-          <input 
-            type="email" 
-            id="email" 
-            value={email}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-              console.log('Email changed:', e.target.value);
-              setEmail(e.target.value);
-            }}
-            placeholder="tu-usuario@amazon.com" 
-            required 
-          />
-        </div>
-        
-        <div className="input-group">
-          <label htmlFor="password">Contraseña:</label>
-          <input 
-            type="password" 
-            id="password" 
-            value={password}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-              console.log('Password changed');
-              setPassword(e.target.value);
-            }}
-            placeholder="••••••••" 
-            required 
-          />
-        </div>
-        
-        <div className="login-options">
-          <button type="submit" className="btn">
-            ✅ Iniciar Sesión
-          </button>
-        </div>
-      </form>
-    );
-  };
-
   return (
     <div className="container">
       <header className="header">
         <div className="auth-section">
           {isLoggedIn ? (
-            <div className="user-info-header">
-              <span>👋 Hola, {userName}</span>
-              <button onClick={logout} className="btn-secondary">
+            <div className="user-info-header" style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '15px'
+            }}>
+              <FastAvatar
+                email={userEmail}
+                alias={userName}
+                size={35}
+              />
+              <span style={{ color: '#00F5A0', fontWeight: '500' }}>
+                👋 Hola, {userName}
+              </span>
+              <button 
+                onClick={logout} 
+                className="btn-secondary"
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: 'white',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+              >
                 Cerrar Sesión
               </button>
             </div>
           ) : (
             <button 
-              onClick={() => {
-                console.log('Login button clicked');
-                setShowLoginModal(true);
-              }} 
+              onClick={() => setShowLoginModal(true)} 
               className="btn-secondary"
+              disabled={authLoading}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: 'white',
+                cursor: authLoading ? 'not-allowed' : 'pointer',
+                transition: 'all 0.3s ease',
+                opacity: authLoading ? 0.6 : 1
+              }}
             >
-              Iniciar Sesión
+              {authLoading ? 'Cargando...' : 'Iniciar Sesión'}
             </button>
           )}
         </div>
         
-        <h1>🏆 ZAZ Football Quiz</h1>
-        <p>Test your knowledge about Real Zaragoza and AWS!</p>
+        <h1 style={{ 
+          fontSize: '3rem', 
+          margin: '20px 0 10px 0',
+          background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          textAlign: 'center'
+        }}>
+          🏆 ZAZ Football Quiz
+        </h1>
+        <p style={{ 
+          fontSize: '1.2rem', 
+          color: 'rgba(255, 255, 255, 0.8)',
+          textAlign: 'center',
+          marginBottom: '30px'
+        }}>
+          Test your knowledge about Real Zaragoza and AWS!
+        </p>
       </header>
 
-      <section className="clubs-section">
-        <div className="club-card zaragoza">
-          <div className="club-logo">RZ</div>
-          <h3>Real Zaragoza</h3>
-          <p>Test your knowledge about the team</p>
+      {/* Login Modal */}
+      <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)}>
+        <div style={{ textAlign: 'center', marginBottom: '25px' }}>
+          <h2 style={{ 
+            color: '#00F5A0', 
+            marginBottom: '10px',
+            fontSize: '1.8rem'
+          }}>
+            🔐 Iniciar Sesión
+          </h2>
+          <p style={{ 
+            color: 'rgba(255, 255, 255, 0.8)',
+            fontSize: '1rem'
+          }}>
+            Inicia sesión para participar en el quiz
+          </p>
         </div>
-        <div className="club-card huesca">
-          <div className="club-logo">SDH</div>
-          <h3>SD Huesca</h3>
-          <p>Learn about the local rival</p>
+        
+        <LoginForm onSubmit={handleLogin} isLoading={authLoading} />
+        
+        <div style={{ 
+          textAlign: 'center', 
+          marginTop: '20px',
+          padding: '15px',
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px'
+        }}>
+          <p style={{ 
+            fontSize: '0.85rem', 
+            color: 'rgba(255, 255, 255, 0.6)',
+            margin: 0
+          }}>
+            ¿Problemas para acceder? Contacta IT Support
+          </p>
+        </div>
+      </Modal>
+
+      {/* Rest of your existing components with improved styling */}
+      <section className="clubs-section" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+        gap: '20px',
+        margin: '40px 0'
+      }}>
+        <div className="club-card zaragoza" style={{
+          background: 'rgba(255, 255, 255, 0.1)',
+          borderRadius: '15px',
+          padding: '25px',
+          textAlign: 'center',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          transition: 'all 0.3s ease'
+        }}>
+          <div className="club-logo" style={{
+            width: '60px',
+            height: '60px',
+            background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 15px auto',
+            fontSize: '1.5rem',
+            fontWeight: 'bold',
+            color: '#1a1a1a'
+          }}>
+            RZ
+          </div>
+          <h3 style={{ color: '#00F5A0', marginBottom: '10px' }}>Real Zaragoza</h3>
+          <p style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Test your knowledge about the team</p>
+        </div>
+        
+        <div className="club-card huesca" style={{
+          background: 'rgba(255, 255, 255, 0.1)',
+          borderRadius: '15px',
+          padding: '25px',
+          textAlign: 'center',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          transition: 'all 0.3s ease'
+        }}>
+          <div className="club-logo" style={{
+            width: '60px',
+            height: '60px',
+            background: 'linear-gradient(45deg, #FFD700, #FFA500)',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 15px auto',
+            fontSize: '1.2rem',
+            fontWeight: 'bold',
+            color: '#1a1a1a'
+          }}>
+            SDH
+          </div>
+          <h3 style={{ color: '#FFD700', marginBottom: '10px' }}>SD Huesca</h3>
+          <p style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Learn about the local rival</p>
         </div>
       </section>
 
       <main className="main-content">
-        <div className="competition-status status-active">
-          <h2>🎯 Quiz Challenge</h2>
-          <p><strong>Categories:</strong> Real Zaragoza, SD Huesca, AWS, Football World Cup, Aragon</p>
-          <p><strong>Questions:</strong> 5 random questions per game</p>
-          <p><strong>Time limit:</strong> 10 seconds per question</p>
-          <div className="countdown">
+        <div className="competition-status status-active" style={{
+          background: 'rgba(0, 245, 160, 0.1)',
+          border: '1px solid rgba(0, 245, 160, 0.3)',
+          borderRadius: '15px',
+          padding: '30px',
+          marginBottom: '30px',
+          textAlign: 'center'
+        }}>
+          <h2 style={{ color: '#00F5A0', marginBottom: '20px' }}>🎯 Quiz Challenge</h2>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+            gap: '15px',
+            marginBottom: '20px'
+          }}>
+            <p><strong>Categories:</strong> Real Zaragoza, SD Huesca, AWS, Football World Cup, Aragon</p>
+            <p><strong>Questions:</strong> 5 random questions per game</p>
+            <p><strong>Time limit:</strong> 10 seconds per question</p>
+          </div>
+          <div className="countdown" style={{
+            fontSize: '1.2rem',
+            color: isLoggedIn ? '#00F5A0' : '#FFA500',
+            fontWeight: '500'
+          }}>
             {isLoggedIn ? '🎮 Ready to test your knowledge?' : '🔐 Please log in to play the quiz'}
           </div>
         </div>
 
-        {/* Login Modal */}
-        {showLoginModal && (
-          <div 
-            className="modal" 
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowLoginModal(false);
-              }
-            }}
-          >
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <span 
-                className="close" 
-                onClick={() => {
-                  console.log('Close button clicked');
-                  setShowLoginModal(false);
+        {/* CTA Section */}
+        <div className="cta-section" style={{ textAlign: 'center', margin: '40px 0' }}>
+          {isLoggedIn ? (
+            <Link to="/quiz" style={{ textDecoration: 'none' }}>
+              <button 
+                className="btn quiz-btn" 
+                style={{
+                  background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
+                  border: 'none',
+                  borderRadius: '15px',
+                  padding: '20px 40px',
+                  fontSize: '1.4rem',
+                  fontWeight: '600',
+                  color: '#1a1a1a',
+                  cursor: 'pointer',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                  boxShadow: '0 8px 25px rgba(0, 245, 160, 0.3)',
+                  transition: 'all 0.3s ease',
+                  transform: 'scale(1)'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.05)';
+                  e.currentTarget.style.boxShadow = '0 12px 35px rgba(0, 245, 160, 0.4)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.boxShadow = '0 8px 25px rgba(0, 245, 160, 0.3)';
                 }}
               >
-                &times;
-              </span>
-              <div className="login-container">
-                <h2>🔐 Iniciar Sesión</h2>
-                <p>Inicia sesión para jugar el quiz</p>
-                <LoginForm onSubmit={handleLogin} />
-                <div className="login-help">
-                  <p><small>¿Problemas para acceder? Contacta IT Support</small></p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="competition-info">
-          <div className="info-card">
-            <h3>⚽ Football</h3>
-            <p>Questions about <strong>Real Zaragoza</strong></p>
-            <p>SD Huesca and World Cup</p>
-          </div>
-          <div className="info-card">
-            <h3>☁️ AWS</h3>
-            <p>Test your <strong>cloud knowledge</strong></p>
-            <p>Services and history</p>
-          </div>
-          <div className="info-card">
-            <h3>🏛️ Aragon</h3>
-            <p>Learn about the <strong>region</strong></p>
-            <p>Culture and traditions</p>
-          </div>
-          <div className="info-card">
-            <h3>🏆 Challenge</h3>
-            <p><strong>5 random questions</strong></p>
-            <p>One attempt only!</p>
-          </div>
-        </div>
-
-        <div className="cta-section">
-          {isLoggedIn ? (
-            <Link to="/quiz" className="btn-link">
-              <button className="btn quiz-btn" style={{
-                background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
-                border: 'none',
-                borderRadius: '15px',
-                padding: '20px 40px',
-                fontSize: '1.4rem',
-                fontWeight: '600',
-                color: '#1a1a1a',
-                cursor: 'pointer',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-                boxShadow: '0 8px 25px rgba(0, 245, 160, 0.3)',
-                transition: 'all 0.3s ease',
-                transform: 'scale(1)'
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.boxShadow = '0 12px 35px rgba(0, 245, 160, 0.4)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = '0 8px 25px rgba(0, 245, 160, 0.3)';
-              }}>
                 🎮 Play Quiz Now
               </button>
             </Link>
@@ -403,18 +736,21 @@ const HomePage: React.FC = () => {
                 letterSpacing: '1px',
                 boxShadow: '0 8px 25px rgba(0, 0, 0, 0.3)',
                 transition: 'all 0.3s ease'
-              }}>
+              }}
+            >
               🔐 Login to Play Quiz
             </button>
           )}
           
-          <p style={{ marginTop: '20px', color: '#666', fontSize: '1.1rem' }}>
-            <small>
-              {isLoggedIn 
-                ? '✨ Challenge yourself with questions about football, AWS, and Aragon!' 
-                : '🔐 Please log in to access the quiz'
-              }
-            </small>
+          <p style={{ 
+            marginTop: '20px', 
+            color: 'rgba(255, 255, 255, 0.7)', 
+            fontSize: '1.1rem' 
+          }}>
+            {isLoggedIn 
+              ? '✨ Challenge yourself with questions about football, AWS, and Aragon!' 
+              : '🔐 Please log in to access the quiz'
+            }
           </p>
         </div>
 
@@ -441,61 +777,39 @@ const HomePage: React.FC = () => {
             gap: '15px',
             marginBottom: '20px'
           }}>
-            <div style={{
-              background: 'rgba(0, 245, 160, 0.2)',
-              padding: '15px',
-              borderRadius: '10px',
-              textAlign: 'center',
-              border: '1px solid rgba(0, 245, 160, 0.3)'
-            }}>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#00F5A0' }}>
-                {stats.totalUsers}
+            {[
+              { value: stats.totalUsers, label: 'Total Users', color: '#00F5A0' },
+              { value: stats.playedUsers, label: 'Played', color: '#00D9F5' },
+              { value: stats.averageScore.toFixed(1), label: 'Avg Score', color: '#FFD700' },
+              { value: stats.perfectScores, label: 'Perfect Scores', color: '#FF6B6B' }
+            ].map((stat, index) => (
+              <div key={index} style={{
+                background: `rgba(${stat.color === '#00F5A0' ? '0, 245, 160' : 
+                                   stat.color === '#00D9F5' ? '0, 217, 245' : 
+                                   stat.color === '#FFD700' ? '255, 215, 0' : '255, 107, 107'}, 0.2)`,
+                padding: '15px',
+                borderRadius: '10px',
+                textAlign: 'center',
+                border: `1px solid rgba(${stat.color === '#00F5A0' ? '0, 245, 160' : 
+                                           stat.color === '#00D9F5' ? '0, 217, 245' : 
+                                           stat.color === '#FFD700' ? '255, 215, 0' : '255, 107, 107'}, 0.3)`
+              }}>
+                <div style={{ 
+                  fontSize: '1.5rem', 
+                  fontWeight: 'bold', 
+                  color: stat.color 
+                }}>
+                  {stat.value}
+                </div>
+                <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>
+                  {stat.label}
+                </div>
               </div>
-              <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Total Users</div>
-            </div>
-            
-            <div style={{
-              background: 'rgba(0, 217, 245, 0.2)',
-              padding: '15px',
-              borderRadius: '10px',
-              textAlign: 'center',
-              border: '1px solid rgba(0, 217, 245, 0.3)'
-            }}>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#00D9F5' }}>
-                {stats.playedUsers}
-              </div>
-              <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Played</div>
-            </div>
-            
-            <div style={{
-              background: 'rgba(255, 215, 0, 0.2)',
-              padding: '15px',
-              borderRadius: '10px',
-              textAlign: 'center',
-              border: '1px solid rgba(255, 215, 0, 0.3)'
-            }}>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#FFD700' }}>
-                {stats.averageScore.toFixed(1)}
-              </div>
-              <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Avg Score</div>
-            </div>
-            
-            <div style={{
-              background: 'rgba(255, 107, 107, 0.2)',
-              padding: '15px',
-              borderRadius: '10px',
-              textAlign: 'center',
-              border: '1px solid rgba(255, 107, 107, 0.3)'
-            }}>
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#FF6B6B' }}>
-                {stats.perfectScores}
-              </div>
-              <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>Perfect Scores</div>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* Ranking Section with Fast Loading Avatars */}
+        {/* Ranking Section */}
         <section className="ranking-section" style={{
           background: 'rgba(255, 255, 255, 0.1)',
           borderRadius: '15px',
@@ -518,35 +832,31 @@ const HomePage: React.FC = () => {
             </h2>
             <button
               onClick={loadRankingData}
+              disabled={isLoadingRanking}
               style={{
                 background: 'rgba(255, 255, 255, 0.2)',
                 border: '1px solid rgba(255, 255, 255, 0.3)',
                 borderRadius: '8px',
                 padding: '8px 15px',
                 color: 'white',
-                cursor: 'pointer',
+                cursor: isLoadingRanking ? 'not-allowed' : 'pointer',
                 fontSize: '0.9rem',
-                transition: 'all 0.3s ease'
+                transition: 'all 0.3s ease',
+                opacity: isLoadingRanking ? 0.6 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
               }}
-              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
-              onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
             >
-              🔄 Refresh
+              {isLoadingRanking ? <LoadingSpinner size="small" /> : '🔄'} 
+              Refresh
             </button>
           </div>
 
           {isLoadingRanking ? (
             <div style={{ textAlign: 'center', padding: '40px' }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                border: '4px solid rgba(255, 255, 255, 0.3)',
-                borderTop: '4px solid #00F5A0',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-                margin: '0 auto 15px auto'
-              }} />
-              <p>Loading ranking...</p>
+              <LoadingSpinner />
+              <p style={{ marginTop: '15px' }}>Loading ranking...</p>
             </div>
           ) : leaderboard.length === 0 ? (
             <div style={{
@@ -588,7 +898,6 @@ const HomePage: React.FC = () => {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      {/* Ranking Position */}
                       <div style={{
                         fontSize: '1.5rem',
                         minWidth: '40px',
@@ -597,7 +906,6 @@ const HomePage: React.FC = () => {
                         {getRankingIcon(position)}
                       </div>
                       
-                      {/* Player Avatar - Using FastAvatar Component */}
                       <FastAvatar
                         email={entry.email}
                         alias={entry.alias}
@@ -605,7 +913,6 @@ const HomePage: React.FC = () => {
                         position={position}
                       />
                       
-                      {/* Player Info */}
                       <div>
                         <div style={{
                           fontSize: '1.1rem',
@@ -614,7 +921,17 @@ const HomePage: React.FC = () => {
                           marginBottom: '2px'
                         }}>
                           #{position} {entry.alias}
-                          {isCurrentUser && <span style={{ marginLeft: '8px', fontSize: '0.9rem' }}>👤 (You)</span>}
+                          {isCurrentUser && (
+                            <span style={{ 
+                              marginLeft: '8px', 
+                              fontSize: '0.9rem',
+                              background: 'rgba(0, 245, 160, 0.3)',
+                              padding: '2px 6px',
+                              borderRadius: '4px'
+                            }}>
+                              👤 You
+                            </span>
+                          )}
                         </div>
                         <div style={{
                           fontSize: '0.85rem',
@@ -625,7 +942,6 @@ const HomePage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Score Section */}
                     <div style={{ textAlign: 'right' }}>
                       <div style={{
                         fontSize: '1.3rem',
@@ -638,10 +954,16 @@ const HomePage: React.FC = () => {
                       <div style={{
                         fontSize: '0.9rem',
                         color: 'rgba(255, 255, 255, 0.8)',
-                        background: `rgba(${entry.percentage === 100 ? '255, 215, 0' : entry.percentage >= 80 ? '0, 245, 160' : entry.percentage >= 60 ? '0, 217, 245' : entry.percentage >= 40 ? '255, 165, 0' : '255, 107, 107'}, 0.2)`,
+                        background: `rgba(${entry.percentage === 100 ? '255, 215, 0' : 
+                                           entry.percentage >= 80 ? '0, 245, 160' : 
+                                           entry.percentage >= 60 ? '0, 217, 245' : 
+                                           entry.percentage >= 40 ? '255, 165, 0' : '255, 107, 107'}, 0.2)`,
                         padding: '2px 8px',
                         borderRadius: '10px',
-                        border: `1px solid rgba(${entry.percentage === 100 ? '255, 215, 0' : entry.percentage >= 80 ? '0, 245, 160' : entry.percentage >= 60 ? '0, 217, 245' : entry.percentage >= 40 ? '255, 165, 0' : '255, 107, 107'}, 0.3)`
+                        border: `1px solid rgba(${entry.percentage === 100 ? '255, 215, 0' : 
+                                                  entry.percentage >= 80 ? '0, 245, 160' : 
+                                                  entry.percentage >= 60 ? '0, 217, 245' : 
+                                                  entry.percentage >= 40 ? '255, 165, 0' : '255, 107, 107'}, 0.3)`
                       }}>
                         {entry.percentage}%
                       </div>
@@ -662,30 +984,63 @@ const HomePage: React.FC = () => {
               fontSize: '0.9rem',
               color: 'rgba(255, 255, 255, 0.7)'
             }}>
-              Showing top {leaderboard.length} players • Updated automatically
+              Showing top {leaderboard.length} players • Updated every 30 seconds
             </div>
           )}
         </section>
       </main>
 
-      <section className="rules-section">
-        <h2>📋 Quiz Rules</h2>
-        <ul className="rules-list">
-          <li>🔐 You must be logged in to play the quiz</li>
-          <li>🎲 5 random questions will be selected from different categories</li>
-          <li>⏱️ You have 10 seconds to answer each question</li>
-          <li>🚫 You cannot go back to previous questions</li>
-          <li>⚠️ You can only attempt the quiz once</li>
-          <li>🏆 Each correct answer gives you 1 point</li>
-          <li>📊 Your final score will be displayed at the end</li>
-          <li>🎯 Categories include: Real Zaragoza, SD Huesca, AWS, World Cup, and Aragon</li>
-          <li>🏅 Your score will appear in the ranking if you're in the top 10</li>
-        </ul>
+      {/* Rules Section */}
+      <section className="rules-section" style={{
+        background: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: '15px',
+        padding: '25px',
+        margin: '30px 0',
+        border: '1px solid rgba(255, 255, 255, 0.1)'
+      }}>
+        <h2 style={{ color: '#00F5A0', marginBottom: '20px' }}>📋 Quiz Rules</h2>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '10px'
+        }}>
+          {[
+            '🔐 You must be logged in to play the quiz',
+            '🎲 5 random questions will be selected from different categories',
+            '⏱️ You have 10 seconds to answer each question',
+            '🚫 You cannot go back to previous questions',
+            '⚠️ You can only attempt the quiz once',
+            '🏆 Each correct answer gives you 1 point',
+            '📊 Your final score will be displayed at the end',
+            '🎯 Categories include: Real Zaragoza, SD Huesca, AWS, World Cup, and Aragon',
+            '🏅 Your score will appear in the ranking if you\'re in the top 10'
+          ].map((rule, index) => (
+            <div key={index} style={{
+              padding: '10px 15px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              fontSize: '0.95rem',
+              color: 'rgba(255, 255, 255, 0.9)'
+            }}>
+              {rule}
+            </div>
+          ))}
+        </div>
       </section>
 
-      <footer className="footer">
-        <p>© 2025 ZAZ Football Quiz | Test your knowledge about football, AWS, and Aragon</p>
-        <p><small>Developed for football and tech enthusiasts</small></p>
+      <footer className="footer" style={{
+        textAlign: 'center',
+        padding: '30px 0',
+        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+        marginTop: '40px'
+      }}>
+        <p style={{ marginBottom: '10px', color: 'rgba(255, 255, 255, 0.8)' }}>
+          © 2025 ZAZ Football Quiz | Test your knowledge about football, AWS, and Aragon
+        </p>
+        <p style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+          Developed for football and tech enthusiasts
+        </p>
       </footer>
     </div>
   );
@@ -696,32 +1051,112 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [userName, setUserName] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
+  const [userAlias, setUserAlias] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  const login = (email: string, password: string) => {
-    setUserEmail(email);
-    setUserName(email.split('@')[0]);
-    setIsLoggedIn(true);
+  // Load session on mount
+  useEffect(() => {
+    const savedSession = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (savedSession) {
+      try {
+        const session = JSON.parse(savedSession);
+        const loginTime = new Date(session.loginTime);
+        const now = new Date();
+        const hoursSinceLogin = (now.getTime() - loginTime.getTime()) / (1000 * 60 * 60);
+        
+        // Session expires after 24 hours
+        if (hoursSinceLogin < 24) {
+          setIsLoggedIn(true);
+          setUserName(session.userName);
+          setUserEmail(session.userEmail);
+          setUserAlias(session.userAlias);
+        } else {
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+        }
+      } catch (error) {
+        console.error('Error loading session:', error);
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    }
+  }, []);
+
+  const login = async (email: string, password: string): Promise<void> => {
+    setIsLoading(true);
+    
+    try {
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Here you would normally make an API call to authenticate
+      // For now, we'll just validate the format
+      const validationError = validateLoginForm(email, password);
+      if (validationError) {
+        throw new Error(validationError);
+      }
+
+      const alias = extractAliasFromEmail(email);
+      const userName = alias;
+      
+      setUserEmail(email);
+      setUserName(userName);
+      setUserAlias(alias);
+      setIsLoggedIn(true);
+      
+      // Save session
+      const sessionData = {
+        userName,
+        userEmail: email,
+        userAlias: alias,
+        loginTime: new Date().toISOString()
+      };
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
+      
+    } catch (error) {
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const logout = () => {
+  const logout = (): void => {
     setIsLoggedIn(false);
     setUserName('');
     setUserEmail('');
-    alert('👋 Sesión cerrada');
+    setUserAlias('');
+    localStorage.removeItem(SESSION_STORAGE_KEY);
   };
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, userName, userEmail, login, logout }}>
+    <AuthContext.Provider value={{ 
+      isLoggedIn, 
+      userName, 
+      userEmail, 
+      userAlias, 
+      login, 
+      logout, 
+      isLoading 
+    }}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+// Protected Route Component
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isLoggedIn } = useAuth();
+  
+  if (!isLoggedIn) {
+    return <Navigate to="/" replace />;
+  }
+  
+  return <>{children}</>;
 };
 
 const App: React.FC = () => {
   return (
     <AuthProvider>
       <Router>
-        {/* Video Background - Behind everything */}
+        {/* Video Background */}
         <video
           autoPlay
           muted
@@ -734,9 +1169,8 @@ const App: React.FC = () => {
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            zIndex: -1 // Behind everything
+            zIndex: -1
           }}
-          onLoadedData={() => console.log('Background video loaded!')}
         >
           <source src="/videos/background-video.mov" type="video/quicktime" />
           <source src="/videos/background-video.mp4" type="video/mp4" />
@@ -746,11 +1180,18 @@ const App: React.FC = () => {
           minHeight: '100vh',
           position: 'relative',
           color: 'white',
-          background: 'transparent' // IMPORTANT: Make this transparent
+          background: 'transparent'
         }}>
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/quiz" element={<Quiz />} />
+            <Route 
+              path="/quiz" 
+              element={
+                <ProtectedRoute>
+                  <Quiz />
+                </ProtectedRoute>
+              } 
+            />
           </Routes>
         </div>
       </Router>
@@ -758,8 +1199,50 @@ const App: React.FC = () => {
   );
 };
 
+// Add CSS animations
+const styles = `
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 
+.club-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+input:focus {
+  outline: none;
+  border-color: #00F5A0 !important;
+  box-shadow: 0 0 0 2px rgba(0, 245, 160, 0.2);
+}
+`;
+
+// Inject styles
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = styles;
+  document.head.appendChild(styleSheet);
+}
 
 export default App;
