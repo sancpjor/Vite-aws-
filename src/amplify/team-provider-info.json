@@ -1,0 +1,20 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-playzaz-dev-dad33-authRole",
+      "UnauthRoleArn": "arn:aws:iam::641963649653:role/amplify-playzaz-dev-dad33-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::641963649653:role/amplify-playzaz-dev-dad33-authRole",
+      "Region": "eu-west-3",
+      "DeploymentBucketName": "amplify-playzaz-dev-dad33-deployment",
+      "UnauthRoleName": "amplify-playzaz-dev-dad33-unauthRole",
+      "StackName": "amplify-playzaz-dev-dad33",
+      "StackId": "arn:aws:cloudformation:eu-west-3:641963649653:stack/amplify-playzaz-dev-dad33/58b45e00-b434-11f0-bb4d-0e0a31681c63",
+      "AmplifyAppId": "d1vns1m506smbv"
+    },
+    "categories": {
+      "api": {
+        "playzaz": {}
+      }
+    }
+  }
+}

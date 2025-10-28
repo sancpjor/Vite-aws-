@@ -1,0 +1,21 @@
+type LeaderboardEntry @model @auth(rules: [{allow: public}]) {
+  id: ID!
+  alias: String!
+  email: String!
+  score: Int!
+  totalQuestions: Int!
+  percentage: Float!
+  date: String!
+  time: String!
+  timestamp: AWSDateTime!
+}
+
+type QuizStats @model @auth(rules: [{allow: public}]) {
+  id: ID!
+  totalUsers: Int!
+  playedUsers: Int!
+  totalAttempts: Int!
+  averageScore: Float!
+  perfectScores: Int!
+  completionRate: Float!
+}
