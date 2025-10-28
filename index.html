@@ -158,20 +158,108 @@
     </div>
 
     <script>
-        function enterCompetition() {
-            if (confirm('¿Confirmas tu participación en la competencia de entradas para Real Zaragoza vs Valencia CF?')) {
-                alert('¡Registrado exitosamente! Recibirás una notificación por Slack con los resultados del sorteo.');
-            }
-        }
+  // Variables globales
+let currentUser = null;
 
-        function updateCountdown() {
-            const countdownElement = document.querySelector('.countdown');
-            if (countdownElement) {
-                // Lógica de countdown real iría aquí
-            }
-        }
+function enterCompetition() {
+    // Mostrar modal de login
+    document.getElementById('loginModal').style.display = 'block';
+}
 
-        setInterval(updateCountdown, 60000);
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+// Cerrar modal al hacer clic fuera
+window.onclick = function(event) {
+    const loginModal = document.getElementById('loginModal');
+    const userModal = document.getElementById('userModal');
+    
+    if (event.target === loginModal) {
+        loginModal.style.display = 'none';
+    }
+    if (event.target === userModal) {
+        userModal.style.display = 'none';
+    }
+}
+
+// Cerrar modal con X
+document.addEventListener('DOMContentLoaded', function() {
+    const closeButtons = document.querySelectorAll('.close');
+    closeButtons.forEach(button => {
+        button.onclick = function() {
+            this.closest('.modal').style.display = 'none';
+        }
+    });
+});
+
+// Manejar formulario de login
+document.addEventListener('DOMContentLoaded', function() {
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            // Simulación de login
+            if (email.includes('@amazon.com') && password.length > 0) {
+                // Login exitoso
+                currentUser = {
+                    name: email.split('@')[0],
+                    email: email
+                };
+                
+                // Cerrar modal de login
+                closeModal('loginModal');
+                
+                // Mostrar modal de usuario
+                document.getElementById('userName').textContent = currentUser.name;
+                document.getElementById('userModal').style.display = 'block';
+                
+            } else {
+                alert('❌ Credenciales inválidas. Usa tu email corporativo @amazon.com');
+            }
+        });
+    }
+});
+
+function loginWithSSO() {
+    alert('🔄 Redirigiendo a AWS SSO...');
+    
+    setTimeout(() => {
+        currentUser = {
+            name: 'Usuario AWS',
+            email: 'usuario@amazon.com'
+        };
+        
+        closeModal('loginModal');
+        document.getElementById('userName').textContent = currentUser.name;
+        document.getElementById('userModal').style.display = 'block';
+    }, 2000);
+}
+
+function confirmParticipation() {
+    if (currentUser) {
+        alert(`🎉 ¡Participación confirmada para ${currentUser.name}!\n\nRecibirás una notificación por Slack con los resultados del sorteo.`);
+        closeModal('userModal');
+    }
+}
+
+function showHelp() {
+    alert('📞 Contacta IT Support:\n\n• Email: it-support@amazon.com\n• Slack: #it-help\n• Teléfono: +1-800-IT-HELP');
+}
+
+function updateCountdown() {
+    const countdownElement = document.querySelector('.countdown');
+    if (countdownElement) {
+        // Lógica de countdown real iría aquí
+    }
+}
+
+setInterval(updateCountdown, 60000);
+
     </script>
 </body>
 </html>
