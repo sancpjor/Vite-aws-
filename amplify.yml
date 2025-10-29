@@ -1,10 +1,4 @@
 version: 1
-backend:
-  phases:
-    build:
-      commands:
-        - npm install --cache .npm --prefer-offline
-        - npx @aws-amplify/cli@latest push --yes
 frontend:
   phases:
     preBuild:
