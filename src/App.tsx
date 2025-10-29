@@ -3,14 +3,14 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-ro
 import Quiz from './components/Quiz';
 import { getLeaderboard, getStats } from './services/quizAPI';
 
-// Importar las imágenes
-import AWSLogo from '/src/images/Amazon_Web_Services_Logo.svg.png';
-import RealZaragozaLogo from '/src/images/RealZaragoza.png';
-import SDHuescaLogo from '/src/images/SDHuesca.png';
-import ZAZClusterLogo from '/src/images/ZAZCluster.png';
-import BackgroundImage from '/src/images/background.png';
-import SponsorHuescaLogo from '/src/images/sponsorhuesca.png';
-import SponsorZaragozaLogo from '/src/images/sponsorzaragoza.png';
+// Rutas de imágenes (ahora en public/)
+const AWSLogo = '/images/Amazon_Web_Services_Logo.svg.png';
+const RealZaragozaLogo = '/images/RealZaragoza.png';
+const SDHuescaLogo = '/images/SDHuesca.png';
+const ZAZClusterLogo = '/images/ZAZCluster.png';
+const BackgroundImage = '/images/background.png';
+const SponsorHuescaLogo = '/images/sponsorhuesca.png';
+const SponsorZaragozaLogo = '/images/sponsorzaragoza.png';
 
 // Types
 interface AuthContextType {
@@ -266,7 +266,7 @@ const LoginForm: React.FC<{
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     setFormData(prev => ({ ...prev, [field]: e.target.value }));
-    if (error) setError(''); // Clear error when user starts typing
+    if (error) setError('');
   };
 
   return (
