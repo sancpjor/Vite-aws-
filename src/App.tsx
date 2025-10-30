@@ -55,11 +55,10 @@ interface LoginFormData {
 const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
 const LEADERBOARD_REFRESH_INTERVAL = 30000;
 
-// CognitoAuthService - SERVICIO REAL
 class CognitoAuthService {
   private config = {
     userPoolId: 'eu-west-3_lHUi9pWBS',
-    clientId: '2626c6f8tuqtosyzp6vt', // ← Actualizado
+    clientId: '5ih9lsr8cv6gpvlblpar1sndf3', // ✅ CORREGIDO
     region: 'eu-west-3'
   };
 
@@ -69,9 +68,6 @@ class CognitoAuthService {
     console.log('🔑 Client ID:', this.config.clientId);
     console.log('🌍 Region:', this.config.region);
   }
-
-  async signIn(email: string, password: string): Promise<any> {
-    console.log('🔐 Iniciando login con Cognito real...', email);
     
     // Validar dominio Amazon
     const amazonDomains = [
