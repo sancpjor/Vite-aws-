@@ -1,719 +1,505 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { questions } from './QuestionData';
-import { useNavigate } from 'react-router-dom';
+// src/components/Quiz.tsx - ACTUALIZADO PARA MEMORIA
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { saveQuizResult } from '../services/quizAPI';
 import { useAuth } from '../App';
-import { saveQuizResult, hasUserPlayed, getUserBestScore } from '../services/quizAPI';
 
-// Amazon internal photo system
-const getPlayerAvatar = (email: string, alias: string): string => {
-  return `https://internal-cdn.amazon.com/badgephotos.amazon.com/?fullsizeimage=1&uid=${alias}`;
-};
+interface Question {
+  id: string;
+  category: string;
+  question: string;
+  options: string[];
+  correctAnswer: number;
+  difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+}
 
-// Helper function for handling image errors with multiple fallbacks
-const handleAvatarError = (e: React.SyntheticEvent<HTMLImageElement>, alias: string, email: string) => {
-  const target = e.target as HTMLImageElement;
-  const currentSrc = target.src;
-  
-  // Fallback 1: Try Amazon internal without fullsizeimage parameter
-  if (currentSrc.includes('fullsizeimage=1')) {
-    target.src = `https://internal-cdn.amazon.com/badgephotos.amazon.com/?uid=${alias}`;
+interface QuizAnswer {
+  questionId: string;
+  selectedAnswer: number;
+  isCorrect: boolean;
+  timeSpent: number;
+}
+
+// Preguntas del quiz
+const mockQuestions: Question[] = [
+  {
+    id: '1',
+    category: 'Real Zaragoza',
+    question: '¿En qué año fue fundado el Real Zaragoza?',
+    options: ['1932', '1935', '1940', '1928'],
+    correctAnswer: 0,
+    difficulty: 'EASY'
+  },
+  {
+    id: '2',
+    category: 'Real Zaragoza',
+    question: '¿Cuál es el estadio del Real Zaragoza?',
+    options: ['La Romareda', 'El Alcoraz', 'Mestalla', 'San Mamés'],
+    correctAnswer: 0,
+    difficulty: 'EASY'
+  },
+  {
+    id: '3',
+    category: 'Real Zaragoza',
+    question: '¿Cuántas Copas del Rey ha ganado el Real Zaragoza?',
+    options: ['4', '5', '6', '7'],
+    correctAnswer: 2,
+    difficulty: 'MEDIUM'
+  },
+  {
+    id: '4',
+    category: 'SD Huesca',
+    question: '¿En qué año fue fundado el SD Huesca?',
+    options: ['1960', '1965', '1970', '1975'],
+    correctAnswer: 0,
+    difficulty: 'EASY'
+  },
+  {
+    id: '5',
+    category: 'SD Huesca',
+    question: '¿Cuál es el estadio del SD Huesca?',
+    options: ['La Romareda', 'El Alcoraz', 'Mestalla', 'San Mamés'],
+    correctAnswer: 1,
+    difficulty: 'EASY'
+  },
+  {
+    id: '6',
+    category: 'AWS',
+    question: '¿Qué significa EC2 en AWS?',
+    options: ['Elastic Compute Cloud', 'Elastic Container Cloud', 'Easy Compute Cloud', 'Extended Compute Cloud'],
+    correctAnswer: 0,
+    difficulty: 'EASY'
+  },
+  {
+    id: '7',
+    category: 'AWS',
+    question: '¿Cuál es el servicio de base de datos relacional de AWS?',
+    options: ['DynamoDB', 'RDS', 'Redshift', 'ElastiCache'],
+    correctAnswer: 1,
+    difficulty: 'EASY'
+  },
+  {
+    id: '8',
+    category: 'AWS',
+    question: '¿Qué servicio de AWS se usa para almacenamiento de objetos?',
+    options: ['EBS', 'EFS', 'S3', 'Glacier'],
+    correctAnswer: 2,
+    difficulty: 'EASY'
+  },
+  {
+    id: '9',
+    category: 'AWS',
+    question: '¿Cuál es la región de AWS en España?',
+    options: ['eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-south-1'],
+    correctAnswer: 2,
+    difficulty: 'MEDIUM'
+  },
+  {
+    id: '10',
+    category: 'World Cup',
+    question: '¿Qué país ganó la Copa del Mundo de 2018?',
+    options: ['Brasil', 'Francia', 'Alemania', 'Argentina'],
+    correctAnswer: 1,
+    difficulty: 'EASY'
+  },
+  {
+    id: '11',
+    category: 'World Cup',
+    question: '¿Quién fue el máximo goleador del Mundial 2018?',
+    options: ['Cristiano Ronaldo', 'Lionel Messi', 'Harry Kane', 'Kylian Mbappé'],
+    correctAnswer: 2,
+    difficulty: 'MEDIUM'
+  },
+  {
+    id: '12',
+    category: 'Aragon',
+    question: '¿Cuál es la capital de Aragón?',
+    options: ['Huesca', 'Teruel', 'Zaragoza', 'Jaca'],
+    correctAnswer: 2,
+    difficulty: 'EASY'
+  },
+  {
+    id: '13',
+    category: 'Aragon',
+    question: '¿Cuántas provincias tiene Aragón?',
+    options: ['2', '3', '4', '5'],
+    correctAnswer: 1,
+    difficulty: 'EASY'
+  },
+  {
+    id: '14',
+    category: 'Aragon',
+    question: '¿Cuál es el río principal que atraviesa Zaragoza?',
+    options: ['Tajo', 'Duero', 'Ebro', 'Guadalquivir'],
+    correctAnswer: 2,
+    difficulty: 'EASY'
+  },
+  {
+    id: '15',
+    category: 'Real Zaragoza',
+    question: '¿En qué año ganó el Real Zaragoza la Recopa de Europa?',
+    options: ['1993', '1994', '1995', '1996'],
+    correctAnswer: 2,
+    difficulty: 'HARD'
   }
-  // Fallback 2: Try with email instead of alias
-  else if (currentSrc.includes('badgephotos.amazon.com') && !currentSrc.includes(email)) {
-    const emailAlias = email.split('@')[0];
-    target.src = `https://internal-cdn.amazon.com/badgephotos.amazon.com/?uid=${emailAlias}`;
-  }
-  // Fallback 3: Use initials-based avatar
-  else {
-    target.src = `https://ui-avatars.com/api/?name=${alias}&background=00f5a0&color=1a1a1a&size=60&font-size=0.6`;
-  }
-};
+];
 
 const Quiz: React.FC = () => {
-  const navigate = useNavigate();
-  const { isLoggedIn, userName, userEmail, logout } = useAuth();
+  const { userEmail, userAlias } = useAuth();
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [answers, setAnswers] = useState<QuizAnswer[]>([]);
+  const [timeLeft, setTimeLeft] = useState(10);
+  const [quizStarted, setQuizStarted] = useState(false);
+  const [quizCompleted, setQuizCompleted] = useState(false);
+  const [score, setScore] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
 
-  // Quiz states
-  const [currentQuestion, setCurrentQuestion] = useState<number>(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<string>('');
-  const [score, setScore] = useState<number>(0);
-  const [showResult, setShowResult] = useState<boolean>(false);
-  const [timeLeft, setTimeLeft] = useState<number>(10);
-  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
-  const [userAnswers, setUserAnswers] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [hasAttempted, setHasAttempted] = useState<boolean>(false);
-  const [canAttempt, setCanAttempt] = useState<boolean>(true);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [userBestScore, setUserBestScore] = useState<any>(null);
-  const [quizStartTime, setQuizStartTime] = useState<Date>(new Date());
+  // Verificar si el usuario ya jugó (simulado)
+  const [hasPlayed, setHasPlayed] = useState(false);
 
-  // Check if user can attempt quiz using Amplify DataStore
   useEffect(() => {
-    const checkUserStatus = async () => {
-      if (!isLoggedIn || !userEmail) {
-        navigate('/');
-        return;
-      }
+    // Simular verificación si el usuario ya jugó
+    const playedUsers = localStorage.getItem('playedUsers');
+    if (playedUsers) {
+      const played = JSON.parse(playedUsers);
+      setHasPlayed(played.includes(userEmail));
+    }
+  }, [userEmail]);
 
-      try {
-        setIsLoading(true);
-        console.log('🔍 Checking user quiz status for:', userEmail);
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (quizStarted && !quizCompleted && timeLeft > 0) {
+      timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+    } else if (timeLeft === 0 && quizStarted && !quizCompleted) {
+      handleTimeUp();
+    }
+    return () => clearTimeout(timer);
+  }, [timeLeft, quizStarted, quizCompleted]);
 
-        // Check if user has already played using Amplify DataStore
-        const userHasPlayed = await hasUserPlayed(userEmail);
-        
-        if (userHasPlayed) {
-          console.log('❌ User has already played');
-          // Get user's best score
-          const bestScore = await getUserBestScore(userEmail);
-          setUserBestScore(bestScore);
-          setHasAttempted(true);
-          setCanAttempt(false);
-        } else {
-          console.log('✅ User can attempt quiz');
-          setCanAttempt(true);
-          // Initialize quiz with random questions
-          const shuffledQuestions = [...questions].sort(() => Math.random() - 0.5).slice(0, 5);
-          setQuizQuestions(shuffledQuestions);
-          setUserAnswers(new Array(5).fill(''));
-          setQuizStartTime(new Date());
-        }
-      } catch (error) {
-        console.error('❌ Error checking user status:', error);
-        alert('Error loading quiz. Please try again.');
-        navigate('/');
-      } finally {
-        setIsLoading(false);
-      }
+  const startQuiz = () => {
+    console.log('🎮 Iniciando quiz...');
+    
+    // Seleccionar 5 preguntas aleatorias
+    const shuffled = [...mockQuestions].sort(() => 0.5 - Math.random());
+    const selectedQuestions = shuffled.slice(0, 5);
+    
+    setQuestions(selectedQuestions);
+    setQuizStarted(true);
+    setQuestionStartTime(Date.now());
+    
+    console.log('✅ Quiz iniciado con', selectedQuestions.length, 'preguntas');
+  };
+
+  const handleTimeUp = () => {
+    console.log('⏰ Tiempo agotado para la pregunta');
+    handleAnswerSubmit(null);
+  };
+
+  const handleAnswerSubmit = (answerIndex: number | null) => {
+    const currentQuestion = questions[currentQuestionIndex];
+    const timeSpent = (Date.now() - questionStartTime) / 1000;
+    const isCorrect = answerIndex === currentQuestion.correctAnswer;
+
+    const answer: QuizAnswer = {
+      questionId: currentQuestion.id,
+      selectedAnswer: answerIndex ?? -1,
+      isCorrect,
+      timeSpent
     };
 
-    checkUserStatus();
-  }, [isLoggedIn, userEmail, navigate]);
+    setAnswers(prev => [...prev, answer]);
 
-  // Timer effect
-  useEffect(() => {
-    if (!showResult && canAttempt && !hasAttempted && timeLeft > 0 && quizQuestions.length > 0) {
-      const timer = setTimeout(() => {
-        setTimeLeft(timeLeft - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (timeLeft === 0 && !showResult) {
-      handleNextQuestion();
-    }
-  }, [timeLeft, showResult, canAttempt, hasAttempted, quizQuestions.length]);
-
-  const handleAnswerSelect = (answer: string) => {
-    setSelectedAnswer(answer);
-    const newAnswers = [...userAnswers];
-    newAnswers[currentQuestion] = answer;
-    setUserAnswers(newAnswers);
-  };
-
-  const handleNextQuestion = useCallback(() => {
-    // Check if answer is correct
-    if (selectedAnswer === quizQuestions[currentQuestion]?.correctAnswer) {
-      setScore(score + 1);
+    if (isCorrect) {
+      setScore(prev => prev + 1);
     }
 
-    // Move to next question or show results
-    if (currentQuestion < quizQuestions.length - 1) {
-      setCurrentQuestion(currentQuestion + 1);
-      setSelectedAnswer('');
+    // Avanzar a la siguiente pregunta o completar el quiz
+    if (currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1);
+      setSelectedAnswer(null);
       setTimeLeft(10);
+      setQuestionStartTime(Date.now());
     } else {
-      finishQuiz();
+      completeQuiz([...answers, answer]);
     }
-  }, [selectedAnswer, currentQuestion, quizQuestions, score]);
+  };
 
-  const finishQuiz = async () => {
-    setIsSubmitting(true);
-    
+  const completeQuiz = async (finalAnswers: QuizAnswer[]) => {
+    console.log('🏁 Completando quiz...');
+    setQuizCompleted(true);
+    setIsLoading(true);
+
     try {
-      console.log('🏁 Finishing quiz...');
+      const finalScore = finalAnswers.filter(a => a.isCorrect).length;
+      const totalTime = finalAnswers.reduce((sum, a) => sum + a.timeSpent, 0);
+      const categories = [...new Set(questions.map(q => q.category))];
 
-      // Calculate final score
-      let finalScore = score;
-      if (selectedAnswer === quizQuestions[currentQuestion]?.correctAnswer) {
-        finalScore += 1;
+      await saveQuizResult(
+        userEmail,
+        userAlias,
+        finalScore,
+        questions.length,
+        finalAnswers,
+        categories,
+        totalTime
+      );
+
+      // Marcar que el usuario ya jugó
+      const playedUsers = localStorage.getItem('playedUsers');
+      const played = playedUsers ? JSON.parse(playedUsers) : [];
+      if (!played.includes(userEmail)) {
+        played.push(userEmail);
+        localStorage.setItem('playedUsers', JSON.stringify(played));
       }
 
-      const quizEndTime = new Date();
-      const totalTime = Math.round((quizEndTime.getTime() - quizStartTime.getTime()) / 1000);
-
-      // Prepare quiz result data
-      const quizResult = {
-        alias: userName,
-        email: userEmail,
-        score: finalScore,
-        totalQuestions: quizQuestions.length,
-        percentage: (finalScore / quizQuestions.length) * 100,
-        date: new Date().toLocaleDateString(),
-        time: new Date().toLocaleTimeString()
-      };
-
-      console.log('💾 Saving quiz result:', quizResult);
-
-      // Save to Amplify DataStore
-      const saveSuccess = await saveQuizResult(quizResult);
-      
-      if (saveSuccess) {
-        console.log('✅ Quiz result saved successfully!');
-        setScore(finalScore);
-        setShowResult(true);
-      } else {
-        throw new Error('Failed to save quiz result');
-      }
-      
+      console.log('✅ Quiz completado y guardado');
     } catch (error) {
-      console.error('❌ Error saving quiz score:', error);
-      alert('Error saving your score. Please try again.');
-      // Still show results even if save failed
-      setShowResult(true);
+      console.error('❌ Error guardando resultado:', error);
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   };
 
-  const handlePlayAgain = () => {
-    navigate('/');
+  const getScoreColor = (percentage: number): string => {
+    if (percentage === 100) return '#FFD700';
+    if (percentage >= 80) return '#00F5A0';
+    if (percentage >= 60) return '#00D9F5';
+    if (percentage >= 40) return '#FFA500';
+    return '#FF6B6B';
   };
 
-  const getScoreMessage = (score: number, total: number) => {
-    const percentage = (score / total) * 100;
-    if (percentage === 100) return { message: "🏆 Perfect! Outstanding knowledge!", color: "#FFD700" };
-    if (percentage >= 80) return { message: "🎉 Excellent! Great job!", color: "#00F5A0" };
-    if (percentage >= 60) return { message: "👍 Good work! Keep it up!", color: "#00D9F5" };
-    if (percentage >= 40) return { message: "📚 Not bad! Room for improvement!", color: "#FFA500" };
-    return { message: "💪 Keep studying and try again!", color: "#FF6B6B" };
+  const getScoreMessage = (percentage: number): string => {
+    if (percentage === 100) return '🏆 ¡Perfecto! Eres un experto';
+    if (percentage >= 80) return '🎉 ¡Excelente trabajo!';
+    if (percentage >= 60) return '👍 ¡Bien hecho!';
+    if (percentage >= 40) return '📚 Puedes mejorar';
+    return '💪 ¡Sigue practicando!';
   };
 
-  // Loading screen
-  if (isLoading) {
+  if (hasPlayed) {
     return (
-      <div className="quiz-container">
-        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+      <div className="container">
+        <div className="quiz-container">
           <div style={{
-            width: '60px',
-            height: '60px',
-            border: '6px solid rgba(255, 255, 255, 0.3)',
-            borderTop: '6px solid #00F5A0',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 20px auto'
-          }} />
-          <h2 style={{ color: '#00F5A0', marginBottom: '10px' }}>Loading Quiz...</h2>
-          <p style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            Checking your quiz status with Amplify DataStore...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Already attempted screen
-  if (hasAttempted || !canAttempt) {
-    return (
-      <div className="quiz-container">
-        <div className="quiz-header">
-          <div className="user-info-quiz">
-            <div className="quiz-player-avatar">
-              <img
-                src={getPlayerAvatar(userEmail, userName)}
-                alt={`${userName} avatar`}
-                onError={(e) => handleAvatarError(e, userName, userEmail)}
-              />
-            </div>
-            <div className="user-details">
-              <h2>👋 Hello, {userName}!</h2>
-              <p>{userEmail}</p>
-            </div>
+            textAlign: 'center',
+            padding: '40px',
+            background: 'rgba(255, 165, 0, 0.1)',
+            borderRadius: '15px',
+            border: '2px solid rgba(255, 165, 0, 0.3)'
+          }}>
+            <h2 style={{ color: '#FFA500', marginBottom: '20px' }}>
+              ⚠️ Ya has completado el quiz
+            </h2>
+            <p style={{ fontSize: '1.1rem', marginBottom: '30px' }}>
+              Solo puedes intentar el quiz una vez. ¡Gracias por participar!
+            </p>
+            <Link to="/" className="btn-link">
+              <button className="btn">🏠 Volver al inicio</button>
+            </Link>
           </div>
-          <button onClick={() => navigate('/')} className="btn-back">
-            ← Back to Home
-          </button>
-        </div>
-
-        <div style={{
-          textAlign: 'center',
-          padding: '60px 20px',
-          background: 'rgba(255, 107, 107, 0.1)',
-          borderRadius: '20px',
-          border: '1px solid rgba(255, 107, 107, 0.3)'
-        }}>
-          <div style={{ fontSize: '4rem', marginBottom: '20px' }}>🚫</div>
-          <h2 style={{ color: '#FF6B6B', marginBottom: '15px', fontSize: '2rem' }}>
-            Quiz Already Completed
-          </h2>
-          <p style={{ 
-            color: 'rgba(255, 255, 255, 0.9)', 
-            fontSize: '1.2rem', 
-            marginBottom: '20px',
-            lineHeight: '1.6'
-          }}>
-            You have already taken this quiz. Each user can only attempt the quiz once.
-          </p>
-
-          {/* Show user's previous score if available */}
-          {userBestScore && (
-            <div style={{
-              background: 'rgba(0, 245, 160, 0.1)',
-              border: '1px solid rgba(0, 245, 160, 0.3)',
-              borderRadius: '15px',
-              padding: '20px',
-              margin: '20px 0',
-              textAlign: 'center'
-            }}>
-              <h3 style={{ color: '#00F5A0', marginBottom: '10px' }}>
-                🏆 Your Previous Score
-              </h3>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#00F5A0' }}>
-                {userBestScore.score}/{userBestScore.totalQuestions}
-              </div>
-              <div style={{ fontSize: '1.2rem', color: '#00D9F5' }}>
-                {userBestScore.percentage.toFixed(1)}%
-              </div>
-              <div style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '10px' }}>
-                Completed on {userBestScore.date} at {userBestScore.time}
-              </div>
-            </div>
-          )}
-          
-          <p style={{ 
-            color: 'rgba(255, 255, 255, 0.8)', 
-            fontSize: '1rem', 
-            marginBottom: '30px'
-          }}>
-            Check the leaderboard on the home page to see how you rank!
-          </p>
-          
-          <button 
-            onClick={handlePlayAgain}
-            className="btn"
-            style={{
-              background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
-              border: 'none',
-              borderRadius: '15px',
-              padding: '15px 30px',
-              fontSize: '1.2rem',
-              fontWeight: '600',
-              color: '#1a1a1a',
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              letterSpacing: '1px'
-            }}
-          >
-            🏠 Back to Home
-          </button>
         </div>
       </div>
     );
   }
 
-  // Quiz results screen
-  if (showResult) {
-    const scoreInfo = getScoreMessage(score, quizQuestions.length);
+  if (quizCompleted) {
+    const percentage = Math.round((score / questions.length) * 100);
     
     return (
-      <div className="quiz-container">
-        <div className="quiz-results">
-          <div className="quiz-results-header">
-            <div className="results-player-avatar">
-              <img
-                src={getPlayerAvatar(userEmail, userName)}
-                alt={`${userName} avatar`}
-                onError={(e) => handleAvatarError(e, userName, userEmail)}
-              />
-            </div>
-            
-            <h2 style={{ color: '#00F5A0', fontSize: '2.5rem', margin: '20px 0 10px 0' }}>
-              🎉 Quiz Completed!
-            </h2>
-            <h3 style={{ color: 'white', fontSize: '1.5rem', marginBottom: '20px' }}>
-              Great job, {userName}!
-            </h3>
+      <div className="container">
+        <div className="quiz-container">
+          <div className="quiz-completed">
+            <h2>🎯 Quiz Completado</h2>
             
             <div style={{
-              background: 'rgba(255, 255, 255, 0.1)',
-              borderRadius: '20px',
+              background: `rgba(${percentage === 100 ? '255, 215, 0' : 
+                               percentage >= 80 ? '0, 245, 160' : 
+                               percentage >= 60 ? '0, 217, 245' : 
+                               percentage >= 40 ? '255, 165, 0' : '255, 107, 107'}, 0.2)`,
+              border: `2px solid ${getScoreColor(percentage)}`,
+              borderRadius: '15px',
               padding: '30px',
               margin: '20px 0',
-              border: '1px solid rgba(255, 255, 255, 0.2)'
+              textAlign: 'center'
             }}>
               <div style={{
                 fontSize: '3rem',
                 fontWeight: 'bold',
-                color: scoreInfo.color,
+                color: getScoreColor(percentage),
                 marginBottom: '10px'
               }}>
-                {score}/{quizQuestions.length}
+                {score}/{questions.length}
               </div>
+              
               <div style={{
                 fontSize: '1.5rem',
-                color: scoreInfo.color,
-                marginBottom: '15px',
-                fontWeight: '600'
+                color: getScoreColor(percentage),
+                marginBottom: '15px'
               }}>
-                {Math.round((score / quizQuestions.length) * 100)}%
+                {percentage}%
               </div>
-              <div style={{
+              
+              <p style={{
                 fontSize: '1.2rem',
-                color: scoreInfo.color,
-                fontWeight: '600'
+                color: getScoreColor(percentage),
+                fontWeight: 'bold'
               }}>
-                {scoreInfo.message}
-              </div>
+                {getScoreMessage(percentage)}
+              </p>
             </div>
 
-            <div style={{
-              background: 'rgba(0, 217, 245, 0.1)',
-              border: '1px solid rgba(0, 217, 245, 0.3)',
-              borderRadius: '15px',
-              padding: '15px',
-              margin: '20px 0',
-              fontSize: '0.9rem',
-              color: 'rgba(255, 255, 255, 0.8)'
-            }}>
-              ✅ Your score has been saved to the leaderboard!
-            </div>
-          </div>
-
-          {/* Question Review */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.05)',
-            borderRadius: '15px',
-            padding: '25px',
-            margin: '30px 0',
-            border: '1px solid rgba(255, 255, 255, 0.1)'
-          }}>
-            <h3 style={{ 
-              color: '#00D9F5', 
-              marginBottom: '20px', 
-              fontSize: '1.5rem',
-              textAlign: 'center'
-            }}>
-              📋 Question Review
-            </h3>
-            
-            {quizQuestions.map((question, index) => (
-              <div key={index} style={{
-                background: userAnswers[index] === question.correctAnswer 
-                  ? 'rgba(0, 245, 160, 0.1)' 
-                  : 'rgba(255, 107, 107, 0.1)',
-                border: userAnswers[index] === question.correctAnswer 
-                  ? '1px solid rgba(0, 245, 160, 0.3)' 
-                  : '1px solid rgba(255, 107, 107, 0.3)',
-                borderRadius: '10px',
-                padding: '15px',
-                margin: '10px 0'
-              }}>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '10px',
-                  marginBottom: '8px'
-                }}>
-                  <span style={{ fontSize: '1.2rem' }}>
-                    {userAnswers[index] === question.correctAnswer ? '✅' : '❌'}
-                  </span>
-                  <strong style={{ color: 'white' }}>Q{index + 1}: {question.question}</strong>
-                </div>
-                
-                <div style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-                  <div>Your answer: <span style={{ 
-                    color: userAnswers[index] === question.correctAnswer ? '#00F5A0' : '#FF6B6B' 
+            <div className="quiz-summary">
+              <h3>📊 Resumen de respuestas</h3>
+              {questions.map((question, index) => {
+                const answer = answers[index];
+                return (
+                  <div key={question.id} style={{
+                    background: answer.isCorrect 
+                      ? 'rgba(0, 245, 160, 0.1)' 
+                      : 'rgba(255, 107, 107, 0.1)',
+                    border: `1px solid ${answer.isCorrect ? '#00F5A0' : '#FF6B6B'}`,
+                    borderRadius: '10px',
+                    padding: '15px',
+                    margin: '10px 0'
                   }}>
-                    {userAnswers[index] || 'No answer'}
-                  </span></div>
-                  {userAnswers[index] !== question.correctAnswer && (
-                    <div>Correct answer: <span style={{ color: '#00F5A0' }}>
-                      {question.correctAnswer}
-                    </span></div>
-                  )}
-                </div>
+                    <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+                      {answer.isCorrect ? '✅' : '❌'} {question.question}
+                    </div>
+                    <div style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                      <strong>Respuesta correcta:</strong> {question.options[question.correctAnswer]}
+                    </div>
+                    {answer.selectedAnswer >= 0 && (
+                      <div style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                        <strong>Tu respuesta:</strong> {question.options[answer.selectedAnswer]}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {isLoading ? (
+              <div style={{ textAlign: 'center', margin: '20px 0' }}>
+                <div className="loading-spinner"></div>
+                <p>Guardando resultado...</p>
               </div>
-            ))}
-          </div>
-
-          <div style={{ textAlign: 'center', marginTop: '30px' }}>
-            <button 
-              onClick={handlePlayAgain}
-              className="btn"
-              style={{
-                background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
-                border: 'none',
-                borderRadius: '15px',
-                padding: '15px 30px',
-                fontSize: '1.2rem',
-                fontWeight: '600',
-                color: '#1a1a1a',
-                cursor: 'pointer',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-                marginRight: '15px'
-              }}
-            >
-              🏠 Back to Home
-            </button>
-            
-            <button 
-              onClick={() => navigate('/')}
-              className="btn-secondary"
-              style={{
-                background: 'rgba(255, 255, 255, 0.2)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                borderRadius: '10px',
-                padding: '15px 30px',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '1rem',
-                fontWeight: '500'
-              }}
-            >
-              📊 View Leaderboard
-            </button>
+            ) : (
+              <div style={{ textAlign: 'center', marginTop: '30px' }}>
+                <Link to="/" className="btn-link">
+                  <button className="btn">🏠 Ver Ranking</button>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
   }
 
-  // Main quiz interface
-  if (quizQuestions.length === 0) {
+  if (!quizStarted) {
     return (
-      <div className="quiz-container">
-        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-          <h2 style={{ color: '#FF6B6B' }}>Error loading questions</h2>
-          <button onClick={() => navigate('/')} className="btn">
-            Back to Home
-          </button>
+      <div className="container">
+        <div className="quiz-container">
+          <div className="quiz-intro">
+            <h1>🎯 ZAZ Football Quiz</h1>
+            <p>Test your knowledge about Real Zaragoza, SD Huesca, AWS, and more!</p>
+            
+            <div className="quiz-rules">
+              <h3>📋 Reglas del Quiz</h3>
+              <ul>
+                <li>🎲 5 preguntas aleatorias de diferentes categorías</li>
+                <li>⏱️ 10 segundos por pregunta</li>
+                <li>🚫 No puedes volver a preguntas anteriores</li>
+                <li>⚠️ Solo puedes intentar el quiz una vez</li>
+                <li>🏆 Cada respuesta correcta vale 1 punto</li>
+              </ul>
+            </div>
+
+            <div className="quiz-categories">
+              <h3>🎯 Categorías</h3>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center' }}>
+                <span className="category-tag">⚽ Real Zaragoza</span>
+                <span className="category-tag">🔴 SD Huesca</span>
+                <span className="category-tag">☁️ AWS</span>
+                <span className="category-tag">🏆 World Cup</span>
+                <span className="category-tag">🏛️ Aragon</span>
+              </div>
+            </div>
+
+            <button onClick={startQuiz} className="btn">
+              🚀 Comenzar Quiz
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  const currentQ = quizQuestions[currentQuestion];
+  const currentQuestion = questions[currentQuestionIndex];
+  const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
 
   return (
-    <div className="quiz-container">
-      {/* Quiz Header */}
-      <div className="quiz-header">
-        <div className="user-info-quiz">
-          <div className="quiz-player-avatar">
-            <img
-              src={getPlayerAvatar(userEmail, userName)}
-              alt={`${userName} avatar`}
-              onError={(e) => handleAvatarError(e, userName, userEmail)}
-            />
+    <div className="container">
+      <div className="quiz-container">
+        <div className="quiz-header">
+          <div className="quiz-progress">
+            <div className="progress-bar">
+              <div 
+                className="progress-fill" 
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+            <span>Pregunta {currentQuestionIndex + 1} de {questions.length}</span>
           </div>
-          <div className="user-details">
-            <h2>👋 Welcome, {userName}!</h2>
-            <p>{userEmail}</p>
-            <div className="quiz-status">
-              Ready to test your knowledge?
+          
+          <div className="quiz-timer">
+            <div style={{
+              background: timeLeft <= 3 ? '#FF6B6B' : '#00F5A0',
+              color: 'white',
+              padding: '10px 20px',
+              borderRadius: '25px',
+              fontSize: '1.2rem',
+              fontWeight: 'bold',
+              animation: timeLeft <= 3 ? 'pulse 1s infinite' : 'none'
+            }}>
+              ⏱️ {timeLeft}s
             </div>
           </div>
         </div>
 
-        <button onClick={() => navigate('/')} className="btn-back">
-          ← Back to Home
-        </button>
-      </div>
+        <div className="question-container">
+          <div className="question-category">
+            📚 {currentQuestion.category}
+          </div>
+          
+          <h2 className="question-text">
+            {currentQuestion.question}
+          </h2>
 
-      {/* Question Progress */}
-      <div className="question-header">
-        <div className="question-progress">
-          Question {currentQuestion + 1} of {quizQuestions.length}
+          <div className="options-container">
+            {currentQuestion.options.map((option, index) => (
+              <button
+                key={index}
+                onClick={() => {
+                  setSelectedAnswer(index);
+                  setTimeout(() => handleAnswerSubmit(index), 200);
+                }}
+                disabled={selectedAnswer !== null}
+                className={`option-button ${
+                  selectedAnswer === index ? 'selected' : ''
+                }`}
+              >
+                <span className="option-letter">
+                  {String.fromCharCode(65 + index)}
+                </span>
+                {option}
+              </button>
+            ))}
+          </div>
         </div>
-        
-        <div className="quiz-mini-avatar">
-          <img
-            src={getPlayerAvatar(userEmail, userName)}
-            alt={userName}
-            style={{
-              width: '35px',
-              height: '35px',
-              borderRadius: '50%',
-              border: '2px solid rgba(255, 255, 255, 0.3)',
-              objectFit: 'cover'
-            }}
-            onError={(e) => handleAvatarError(e, userName, userEmail)}
-          />
-        </div>
-      </div>
-
-      {/* Timer */}
-      <div style={{
-        background: timeLeft <= 3 ? 'rgba(255, 107, 107, 0.2)' : 'rgba(0, 217, 245, 0.2)',
-        border: `1px solid ${timeLeft <= 3 ? 'rgba(255, 107, 107, 0.3)' : 'rgba(0, 217, 245, 0.3)'}`,
-        borderRadius: '15px',
-        padding: '15px',
-        textAlign: 'center',
-        marginBottom: '25px'
-      }}>
-        <div style={{
-          fontSize: '2rem',
-          fontWeight: 'bold',
-          color: timeLeft <= 3 ? '#FF6B6B' : '#00D9F5',
-          marginBottom: '5px'
-        }}>
-          {timeLeft}
-        </div>
-        <div style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '0.9rem' }}>
-          seconds remaining
-        </div>
-      </div>
-
-      {/* Question */}
-      <div style={{
-        background: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: '15px',
-        padding: '25px',
-        marginBottom: '25px',
-        border: '1px solid rgba(255, 255, 255, 0.2)'
-      }}>
-        <h3 style={{
-          color: '#00F5A0',
-          fontSize: '1.3rem',
-          marginBottom: '8px',
-          fontWeight: '600'
-        }}>
-          Category: {currentQ.category}
-        </h3>
-        
-        <h2 style={{
-          color: 'white',
-          fontSize: '1.5rem',
-          lineHeight: '1.4',
-          marginBottom: '0'
-        }}>
-          {currentQ.question}
-        </h2>
-      </div>
-
-      {/* Answer Options */}
-      <div style={{
-        display: 'grid',
-        gap: '15px',
-        marginBottom: '30px'
-      }}>
-        {currentQ.options.map((option: string, index: number) => (
-          <button
-            key={index}
-            onClick={() => handleAnswerSelect(option)}
-            style={{
-              background: selectedAnswer === option 
-                ? 'rgba(0, 245, 160, 0.3)' 
-                : 'rgba(255, 255, 255, 0.1)',
-              border: selectedAnswer === option 
-                ? '2px solid #00F5A0' 
-                : '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '12px',
-              padding: '20px',
-              color: 'white',
-              fontSize: '1.1rem',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              textAlign: 'left',
-              fontWeight: selectedAnswer === option ? '600' : '400'
-            }}
-            onMouseOver={(e) => {
-              if (selectedAnswer !== option) {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-              }
-            }}
-            onMouseOut={(e) => {
-              if (selectedAnswer !== option) {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-              }
-            }}
-          >
-            <span style={{ 
-              marginRight: '12px', 
-              color: '#00D9F5',
-              fontWeight: 'bold'
-            }}>
-              {String.fromCharCode(65 + index)}.
-            </span>
-            {option}
-          </button>
-        ))}
-      </div>
-
-      {/* Next Button */}
-      <div style={{ textAlign: 'center' }}>
-        <button
-          onClick={handleNextQuestion}
-          disabled={!selectedAnswer || isSubmitting}
-          style={{
-            background: selectedAnswer && !isSubmitting
-              ? 'linear-gradient(45deg, #00F5A0, #00D9F5)'
-              : 'rgba(255, 255, 255, 0.3)',
-            border: 'none',
-            borderRadius: '15px',
-            padding: '15px 40px',
-            fontSize: '1.2rem',
-            fontWeight: '600',
-            color: selectedAnswer && !isSubmitting ? '#1a1a1a' : 'rgba(255, 255, 255, 0.6)',
-            cursor: selectedAnswer && !isSubmitting ? 'pointer' : 'not-allowed',
-            textTransform: 'uppercase',
-            letterSpacing: '1px',
-            transition: 'all 0.3s ease',
-            opacity: selectedAnswer && !isSubmitting ? 1 : 0.6
-          }}
-        >
-          {isSubmitting ? (
-            <>
-              <span style={{ marginRight: '10px' }}>⏳</span>
-              Saving to DataStore...
-            </>
-          ) : currentQuestion === quizQuestions.length - 1 ? (
-            <>
-              <span style={{ marginRight: '10px' }}>🏁</span>
-              Finish Quiz
-            </>
-          ) : (
-            <>
-              <span style={{ marginRight: '10px' }}>➡️</span>
-              Next Question
-            </>
-          )}
-        </button>
-        
-        {!selectedAnswer && (
-          <p style={{ 
-            color: 'rgba(255, 255, 255, 0.7)', 
-            marginTop: '15px',
-            fontSize: '0.9rem'
-          }}>
-            Please select an answer to continue
-          </p>
-        )}
-      </div>
-
-      {/* Progress Bar */}
-      <div style={{
-        marginTop: '30px',
-        background: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: '10px',
-        height: '8px',
-        overflow: 'hidden'
-      }}>
-        <div style={{
-          background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
-          height: '100%',
-          width: `${((currentQuestion + 1) / quizQuestions.length) * 100}%`,
-          transition: 'width 0.3s ease'
-        }} />
-      </div>
-      
-      <div style={{
-        textAlign: 'center',
-        marginTop: '10px',
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontSize: '0.9rem'
-      }}>
-        Progress: {currentQuestion + 1}/{quizQuestions.length} questions completed
       </div>
     </div>
   );
