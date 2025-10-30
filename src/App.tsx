@@ -1,4 +1,4 @@
-// App.tsx - ARCHIVO COMPLETO CON MIDWAY REAL (SIN OAUTH2)
+// App.tsx - ARCHIVO COMPLETO CON MIDWAY WEB SCRAPING
 import React, { useState, createContext, useContext, useEffect, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Quiz from './components/Quiz';
@@ -19,7 +19,7 @@ interface AuthContextType {
   userName: string;
   userEmail: string;
   userAlias: string;
-  login: (email: string) => Promise<void>;
+  login: () => Promise<void>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -44,114 +44,273 @@ interface QuizStats {
   completionRate: number;
 }
 
-interface LoginFormData {
-  email: string;
-}
-
 // Constants
 const LEADERBOARD_REFRESH_INTERVAL = 30000;
-const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
 
-// MidwayDirectAuthService - SERVICIO DIRECTO CON MIDWAY
-class MidwayDirectAuthService {
+// MidwayScrapingAuthService - SERVICIO CON WEB SCRAPING
+class MidwayScrapingAuthService {
   private config = {
     midwayUrl: 'https://midway-auth.amazon.com',
+    proxyUrl: 'https://api.allorigins.win/get?url=', // Proxy para CORS
     appName: 'ZAZ Football Quiz'
   };
 
   constructor() {
-    console.log('🔧 MidwayDirectAuthService inicializado');
+    console.log('🔧 MidwayScrapingAuthService inicializado');
     console.log('🌐 Midway URL:', this.config.midwayUrl);
+    console.log('🕷️ Usando web scraping para extraer usuario');
     console.log('📱 App:', this.config.appName);
   }
 
-  // Verificar si el usuario está autenticado en Midway
-  async checkMidwayAuth(): Promise<any> {
-    console.log('🔍 Verificando autenticación en Midway...');
+  // Extraer usuario de Midway mediante scraping
+  async extractUserFromMidway(): Promise<any> {
+    console.log('🕷️ Iniciando scraping de Midway...');
     
     try {
-      // Intentar hacer una petición a Midway para verificar autenticación
-      const response = await fetch(`${this.config.midwayUrl}/`, {
-        method: 'GET',
-        credentials: 'include', // Incluir cookies de sesión
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'User-Agent': 'ZAZ-Football-Quiz/1.0'
-        }
-      });
-
-      const htmlContent = await response.text();
+      // Método 1: Intentar acceso directo (puede fallar por CORS)
+      let htmlContent = '';
+      let method = '';
       
-      // Buscar el nombre de usuario en el HTML
-      const welcomeMatch = htmlContent.match(/Welcome\s+([^!]+)!/i);
-      
-      if (welcomeMatch && welcomeMatch[1]) {
-        const username = welcomeMatch[1].trim();
-        console.log('✅ Usuario autenticado en Midway:', username);
+      try {
+        console.log('🔍 Intentando acceso directo a Midway...');
+        const directResponse = await fetch(this.config.midwayUrl, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Cache-Control': 'no-cache'
+          }
+        });
         
+        if (directResponse.ok) {
+          htmlContent = await directResponse.text();
+          method = 'direct';
+          console.log('✅ Acceso directo exitoso');
+        }
+      } catch (directError) {
+        console.log('⚠️ Acceso directo falló, intentando con proxy...');
+        
+        // Método 2: Usar proxy para evitar CORS
+        try {
+          const proxyResponse = await fetch(`${this.config.proxyUrl}${encodeURIComponent(this.config.midwayUrl)}`, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
+          
+          if (proxyResponse.ok) {
+            const proxyData = await proxyResponse.json();
+            htmlContent = proxyData.contents;
+            method = 'proxy';
+            console.log('✅ Acceso con proxy exitoso');
+          }
+        } catch (proxyError) {
+          console.log('⚠️ Proxy también falló, intentando método iframe...');
+          
+          // Método 3: Crear iframe oculto para scraping
+          return await this.extractUserViaIframe();
+        }
+      }
+
+      if (!htmlContent) {
+        throw new Error('No se pudo obtener contenido de Midway');
+      }
+
+      // Parsear HTML para extraer usuario
+      const userInfo = this.parseUserFromHTML(htmlContent);
+      
+      if (userInfo) {
+        console.log(`✅ Usuario extraído exitosamente (${method}):`, userInfo.username);
         return {
           isAuthenticated: true,
-          username: username,
-          email: `${username}@amazon.com`, // Asumir dominio amazon.com
-          alias: username,
-          source: 'midway-direct'
+          username: userInfo.username,
+          email: `${userInfo.username}@amazon.com`,
+          alias: userInfo.username,
+          source: `midway-scraping-${method}`,
+          extractedAt: new Date().toISOString()
         };
       } else {
-        console.log('❌ Usuario no autenticado en Midway');
+        console.log('❌ No se encontró usuario autenticado en Midway');
         return {
           isAuthenticated: false,
-          redirectUrl: this.config.midwayUrl
+          redirectUrl: this.config.midwayUrl,
+          reason: 'Usuario no encontrado en HTML'
         };
       }
     } catch (error) {
-      console.error('❌ Error verificando Midway:', error);
-      throw new Error('Error conectando con Midway. Verifica tu conexión.');
+      console.error('❌ Error en scraping de Midway:', error);
+      throw new Error(`Error extrayendo usuario de Midway: ${error.message}`);
+    }
+  }
+
+  // Método alternativo usando iframe
+  private async extractUserViaIframe(): Promise<any> {
+    return new Promise((resolve, reject) => {
+      console.log('🖼️ Intentando extracción via iframe...');
+      
+      const iframe = document.createElement('iframe');
+      iframe.src = this.config.midwayUrl;
+      iframe.style.display = 'none';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      
+      const timeout = setTimeout(() => {
+        document.body.removeChild(iframe);
+        reject(new Error('Timeout extrayendo usuario via iframe'));
+      }, 10000);
+
+      iframe.onload = () => {
+        try {
+          // Intentar acceder al contenido del iframe
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+          
+          if (iframeDoc) {
+            const titleElement = iframeDoc.querySelector('h1.title');
+            if (titleElement) {
+              const userInfo = this.parseUserFromElement(titleElement);
+              clearTimeout(timeout);
+              document.body.removeChild(iframe);
+              
+              if (userInfo) {
+                console.log('✅ Usuario extraído via iframe:', userInfo.username);
+                resolve({
+                  isAuthenticated: true,
+                  username: userInfo.username,
+                  email: `${userInfo.username}@amazon.com`,
+                  alias: userInfo.username,
+                  source: 'midway-scraping-iframe',
+                  extractedAt: new Date().toISOString()
+                });
+              } else {
+                resolve({
+                  isAuthenticated: false,
+                  redirectUrl: this.config.midwayUrl,
+                  reason: 'Usuario no encontrado en iframe'
+                });
+              }
+            } else {
+              resolve({
+                isAuthenticated: false,
+                redirectUrl: this.config.midwayUrl,
+                reason: 'Elemento h1.title no encontrado'
+              });
+            }
+          } else {
+            // CORS bloquea el acceso al iframe
+            resolve({
+              isAuthenticated: false,
+              redirectUrl: this.config.midwayUrl,
+              reason: 'CORS bloquea acceso al iframe'
+            });
+          }
+        } catch (error) {
+          clearTimeout(timeout);
+          document.body.removeChild(iframe);
+          reject(error);
+        }
+      };
+
+      iframe.onerror = () => {
+        clearTimeout(timeout);
+        document.body.removeChild(iframe);
+        reject(new Error('Error cargando iframe de Midway'));
+      };
+
+      document.body.appendChild(iframe);
+    });
+  }
+
+  // Parsear HTML para extraer información del usuario
+  private parseUserFromHTML(html: string): { username: string } | null {
+    console.log('🔍 Parseando HTML para extraer usuario...');
+    
+    try {
+      // Crear un parser DOM temporal
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      // Buscar el elemento h1 con clase "title"
+      const titleElement = doc.querySelector('h1.title');
+      
+      if (titleElement) {
+        return this.parseUserFromElement(titleElement);
+      }
+
+      // Fallback: buscar con regex si no se encuentra el elemento
+      const welcomeRegex = /Welcome\s+([^!<\s]+)!/i;
+      const match = html.match(welcomeRegex);
+      
+      if (match && match[1]) {
+        const username = match[1].trim();
+        console.log('✅ Usuario encontrado con regex:', username);
+        return { username };
+      }
+
+      console.log('❌ No se encontró usuario en el HTML');
+      return null;
+    } catch (error) {
+      console.error('❌ Error parseando HTML:', error);
+      return null;
+    }
+  }
+
+  // Extraer usuario de un elemento DOM
+  private parseUserFromElement(element: Element): { username: string } | null {
+    try {
+      const textContent = element.textContent || element.innerHTML;
+      console.log('🔍 Contenido del elemento:', textContent);
+      
+      // Buscar patrón "Welcome username!"
+      const welcomeMatch = textContent.match(/Welcome\s+([^!<\s]+)!/i);
+      
+      if (welcomeMatch && welcomeMatch[1]) {
+        const username = welcomeMatch[1].trim();
+        console.log('✅ Usuario extraído del elemento:', username);
+        return { username };
+      }
+
+      console.log('❌ No se encontró patrón de usuario en el elemento');
+      return null;
+    } catch (error) {
+      console.error('❌ Error extrayendo usuario del elemento:', error);
+      return null;
     }
   }
 
   // Redirigir a Midway para autenticación
   redirectToMidway(): void {
     console.log('🔄 Redirigiendo a Midway para autenticación...');
-    window.open(this.config.midwayUrl, '_blank', 'width=800,height=600');
+    window.open(this.config.midwayUrl, '_blank', 'width=1000,height=700');
   }
 
-  // Login con email (verificar que coincida con Midway)
-  async loginWithEmail(email: string): Promise<any> {
-    console.log('🔐 Intentando login con email:', email);
+  // Login principal
+  async login(): Promise<any> {
+    console.log('🔐 Iniciando login con scraping de Midway...');
     
-    // Validar dominio Amazon
-    if (!AMAZON_EMAIL_REGEX.test(email)) {
-      throw new Error('Solo empleados de Amazon pueden acceder. Usa tu email corporativo (@amazon.com)');
-    }
-
-    // Verificar autenticación en Midway
-    const midwayAuth = await this.checkMidwayAuth();
+    const userInfo = await this.extractUserFromMidway();
     
-    if (!midwayAuth.isAuthenticated) {
-      throw new Error('Debes estar autenticado en Midway primero. Se abrirá una ventana para autenticarte.');
+    if (!userInfo.isAuthenticated) {
+      throw new Error('No estás autenticado en Midway. Se abrirá una ventana para que te autentiques.');
     }
 
-    // Verificar que el email coincida con el usuario de Midway
-    const emailAlias = email.split('@')[0];
-    if (emailAlias.toLowerCase() !== midwayAuth.username.toLowerCase()) {
-      throw new Error(`El email no coincide con tu usuario de Midway (${midwayAuth.username}). Usa: ${midwayAuth.email}`);
-    }
-
-    console.log('✅ Login exitoso con Midway');
+    console.log('✅ Login exitoso con scraping de Midway');
     
     return {
       user: {
-        email: midwayAuth.email,
-        name: midwayAuth.username,
-        alias: midwayAuth.alias,
-        source: 'midway-direct'
+        email: userInfo.email,
+        name: userInfo.username,
+        alias: userInfo.alias,
+        source: userInfo.source,
+        extractedAt: userInfo.extractedAt
       }
     };
   }
 
   // Obtener información del usuario actual
   async getCurrentUser(): Promise<any> {
-    const savedSession = localStorage.getItem('midwayDirectSession');
+    const savedSession = localStorage.getItem('midwayScrapingSession');
     if (!savedSession) {
       throw new Error('No hay sesión activa');
     }
@@ -162,27 +321,37 @@ class MidwayDirectAuthService {
       const now = new Date();
       const hoursSinceLogin = (now.getTime() - loginTime.getTime()) / (1000 * 60 * 60);
       
-      // Verificar que la sesión no haya expirado (8 horas)
-      if (hoursSinceLogin < 8) {
-        // Verificar que sigue autenticado en Midway
-        const midwayAuth = await this.checkMidwayAuth();
-        if (midwayAuth.isAuthenticated && midwayAuth.username === session.user.alias) {
-          return session.user;
-        }
+      // Verificar que la sesión no haya expirado (4 horas)
+      if (hoursSinceLogin < 4) {
+        return session.user;
       }
       
-      // Sesión expirada o inválida
-      localStorage.removeItem('midwayDirectSession');
+      // Sesión expirada, intentar renovar
+      console.log('🔄 Sesión expirada, intentando renovar...');
+      const userInfo = await this.extractUserFromMidway();
+      
+      if (userInfo.isAuthenticated && userInfo.username === session.user.alias) {
+        // Renovar sesión
+        const renewedSession = {
+          user: session.user,
+          loginTime: new Date().toISOString()
+        };
+        localStorage.setItem('midwayScrapingSession', JSON.stringify(renewedSession));
+        return session.user;
+      }
+      
+      // Usuario cambió o no está autenticado
+      localStorage.removeItem('midwayScrapingSession');
       throw new Error('Sesión expirada');
     } catch (error) {
-      localStorage.removeItem('midwayDirectSession');
+      localStorage.removeItem('midwayScrapingSession');
       throw new Error('Sesión inválida');
     }
   }
 
   // Cerrar sesión
   logout(): void {
-    localStorage.removeItem('midwayDirectSession');
+    localStorage.removeItem('midwayScrapingSession');
     console.log('🚪 Sesión local cerrada');
     
     // Informar al usuario sobre cerrar sesión en Midway
@@ -193,12 +362,13 @@ class MidwayDirectAuthService {
   getConfig() {
     return {
       midwayUrl: this.config.midwayUrl,
-      appName: this.config.appName
+      appName: this.config.appName,
+      proxyUrl: this.config.proxyUrl
     };
   }
 }
 
-const midwayAuthService = new MidwayDirectAuthService();
+const midwayAuthService = new MidwayScrapingAuthService();
 
 // Auth Context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -214,18 +384,6 @@ export const useAuth = () => {
 // Utility Functions
 const getPlayerAvatar = (email: string, alias: string): string => {
   return `https://internal-cdn.amazon.com/badgephotos.amazon.com/?fullsizeimage=1&uid=${alias}`;
-};
-
-const validateLoginForm = (email: string): string | null => {
-  if (!email) {
-    return 'Por favor ingresa tu email';
-  }
-  
-  if (!AMAZON_EMAIL_REGEX.test(email)) {
-    return 'Por favor usa tu email corporativo de Amazon (@amazon.com)';
-  }
-  
-  return null;
 };
 
 // Components
@@ -382,12 +540,11 @@ const ClubLogo: React.FC<{
   );
 };
 
-// LoginForm Component - CON MIDWAY DIRECTO
+// LoginForm Component - CON SCRAPING AUTOMÁTICO
 const LoginForm: React.FC<{
-  onSubmit: (data: LoginFormData) => Promise<void>;
+  onSubmit: () => Promise<void>;
   isLoading: boolean;
 }> = ({ onSubmit, isLoading }) => {
-  const [formData, setFormData] = useState<LoginFormData>({ email: '' });
   const [error, setError] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -395,26 +552,17 @@ const LoginForm: React.FC<{
     setError('');
     
     try {
-      const validationError = validateLoginForm(formData.email);
-      if (validationError) {
-        setError(validationError);
-        return;
-      }
-      
-      await onSubmit(formData);
+      await onSubmit();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error en la autenticación');
       
       // Si el error indica que debe autenticarse en Midway, abrir ventana
-      if (err instanceof Error && err.message.includes('Midway primero')) {
-        midwayAuthService.redirectToMidway();
+      if (err instanceof Error && err.message.includes('Midway')) {
+        setTimeout(() => {
+          midwayAuthService.redirectToMidway();
+        }, 2000);
       }
     }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ email: e.target.value });
-    if (error) setError('');
   };
 
   const openMidway = () => {
@@ -447,10 +595,10 @@ const LoginForm: React.FC<{
         textAlign: 'center'
       }}>
         <p style={{ color: '#00F5A0', fontSize: '0.9rem', margin: '0 0 10px 0', fontWeight: 'bold' }}>
-          🔒 Autenticación con Midway
+          🕷️ Extracción Automática de Midway
         </p>
         <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '0.8rem', margin: 0 }}>
-          Primero debes estar autenticado en Midway
+          El sistema extraerá tu usuario automáticamente de Midway
         </p>
       </div>
 
@@ -470,34 +618,18 @@ const LoginForm: React.FC<{
             marginBottom: '15px'
           }}
         >
-          🌐 Abrir Midway Authentication
-        </p>
-      </div>
-
-      <div className="input-group">
-        <label htmlFor="email">Tu email corporativo:</label>
-        <input 
-          type="email" 
-          id="email" 
-          value={formData.email}
-          onChange={handleInputChange}
-          placeholder="sancpjor@amazon.com" 
-          required 
-          disabled={isLoading}
-        />
-        <p style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '5px' }}>
-          💡 Debe coincidir con tu usuario de Midway
-        </p>
+          🌐 Abrir Midway (si no estás autenticado)
+        </button>
       </div>
       
       <button type="submit" disabled={isLoading} className="btn">
         {isLoading ? (
           <>
             <LoadingSpinner size="small" />
-            Verificando con Midway...
+            Extrayendo usuario de Midway...
           </>
         ) : (
-          '✅ Iniciar Sesión'
+          '🕷️ Extraer Usuario de Midway'
         )}
       </button>
 
@@ -514,13 +646,13 @@ const LoginForm: React.FC<{
           margin: '0 0 10px 0',
           fontWeight: 'bold'
         }}>
-          ℹ️ Cómo funciona
+          ℹ️ Cómo funciona el scraping
         </p>
         <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-          <p style={{ margin: '5px 0' }}>1. Haz clic en "Abrir Midway Authentication"</p>
-          <p style={{ margin: '5px 0' }}>2. Auténticate en Midway si no lo has hecho</p>
-          <p style={{ margin: '5px 0' }}>3. Vuelve aquí e ingresa tu email</p>
-          <p style={{ margin: '5px 0' }}>4. El sistema verificará tu autenticación</p>
+          <p style={{ margin: '5px 0' }}>1. El sistema accede a {midwayAuthService.getConfig().midwayUrl}</p>
+          <p style={{ margin: '5px 0' }}>2. Busca el elemento: &lt;h1 class="title"&gt;Welcome usuario!&lt;/h1&gt;</p>
+          <p style={{ margin: '5px 0' }}>3. Extrae automáticamente tu nombre de usuario</p>
+          <p style={{ margin: '5px 0' }}>4. Te autentica sin necesidad de ingresar datos</p>
         </div>
       </div>
     </form>
@@ -560,7 +692,7 @@ const Modal: React.FC<{
   );
 };
 
-// AuthProvider con Midway Directo
+// AuthProvider con Scraping de Midway
 const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [userName, setUserName] = useState<string>('');
@@ -576,8 +708,9 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     // Mostrar información de desarrollo
     if (process.env.NODE_ENV === 'development') {
       console.log('🎮 ZAZ Football Quiz - Modo de desarrollo');
-      console.log('🔐 Usando Midway Direct Authentication');
+      console.log('🕷️ Usando Midway Web Scraping Authentication');
       console.log('🌐 Midway URL:', authService.getConfig().midwayUrl);
+      console.log('🔍 Target Element: <h1 class="title">Welcome usuario!</h1>');
       console.log('📱 App:', authService.getConfig().appName);
     }
   }, []);
@@ -595,15 +728,11 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     }
   };
 
-  const login = async (email: string): Promise<void> => {
-    if (!email) {
-      throw new Error('Email es requerido');
-    }
-    
+  const login = async (): Promise<void> => {
     setIsLoading(true);
     
     try {
-      const result = await authService.loginWithEmail(email);
+      const result = await authService.login();
       
       setIsLoggedIn(true);
       setUserEmail(result.user.email);
@@ -614,11 +743,11 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         user: result.user,
         loginTime: new Date().toISOString()
       };
-      localStorage.setItem('midwayDirectSession', JSON.stringify(sessionData));
+      localStorage.setItem('midwayScrapingSession', JSON.stringify(sessionData));
       
-      console.log('✅ Login completado y sesión guardada');
+      console.log('✅ Login completado con scraping y sesión guardada');
     } catch (error) {
-      console.error('❌ Error en login:', error);
+      console.error('❌ Error en login con scraping:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -639,7 +768,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       userName, 
       userEmail, 
       userAlias, 
-      login: (email: string) => login(email),
+      login,
       logout, 
       isLoading 
     }}>
@@ -688,8 +817,8 @@ const HomePage: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadRankingData]);
 
-  const handleLogin = async (formData: LoginFormData): Promise<void> => {
-    await login(formData.email);
+  const handleLogin = async (): Promise<void> => {
+    await login();
     setShowLoginModal(false);
     setTimeout(loadRankingData, 1000);
   };
@@ -733,12 +862,12 @@ const HomePage: React.FC = () => {
               className="btn-secondary"
               disabled={authLoading}
             >
-              {authLoading ? 'Cargando...' : 'Iniciar Sesión'}
+              {authLoading ? 'Extrayendo...' : 'Iniciar Sesión'}
             </button>
           )}
         </div>
         
-        {/* Logos principales con imágenes reales */}
+        {/* Logos principales */}
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
@@ -792,8 +921,8 @@ const HomePage: React.FC = () => {
       {/* Login Modal */}
       <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)}>
         <div className="login-container">
-          <h2>🔐 Acceso Amazon</h2>
-          <p>Inicia sesión con tu cuenta de Midway</p>
+          <h2>🕷️ Extracción Automática</h2>
+          <p>El sistema extraerá tu usuario automáticamente de Midway</p>
           <LoginForm 
             onSubmit={handleLogin} 
             isLoading={authLoading} 
@@ -801,7 +930,7 @@ const HomePage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Resto del componente igual... */}
+      {/* Resto del componente igual que antes... */}
       <section className="clubs-section">
         <div className="club-card zaragoza">
           <ClubLogo
@@ -880,13 +1009,13 @@ const HomePage: React.FC = () => {
               <button className="btn">🎮 Play Quiz Now</button>
             </Link>
           ) : (
-            <button onClick={handleQuizClick} className="btn">🔐 Login to Play Quiz</button>
+            <button onClick={handleQuizClick} className="btn">🕷️ Extract User & Play Quiz</button>
           )}
           
           <p>
             {isLoggedIn 
               ? '✨ Challenge yourself with questions about football, AWS, and Aragon!' 
-              : '🔐 Please log in to access the quiz'
+              : '🕷️ The system will automatically extract your username from Midway'
             }
           </p>
         </div>
@@ -1047,7 +1176,7 @@ const HomePage: React.FC = () => {
       <section className="rules-section">
         <h2>📋 Quiz Rules</h2>
         <ul className="rules-list">
-          <li>🔐 You must be logged in to play the quiz</li>
+          <li>🕷️ The system will automatically extract your username from Midway</li>
           <li>🎲 5 random questions will be selected from different categories</li>
           <li>⏱️ You have 10 seconds to answer each question</li>
           <li>🚫 You cannot go back to previous questions</li>
@@ -1125,7 +1254,7 @@ const HomePage: React.FC = () => {
         </div>
         
         <p>© 2025 ZAZ Football Quiz | Test your knowledge about football, AWS, and Aragon</p>
-        <p>Developed for football and tech enthusiasts | Powered by Midway Authentication</p>
+        <p>Developed for football and tech enthusiasts | Powered by Midway Web Scraping</p>
       </footer>
     </div>
   );
