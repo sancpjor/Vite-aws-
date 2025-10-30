@@ -1,4 +1,4 @@
-// App.tsx - ARCHIVO COMPLETO CON COGNITO REAL
+// App.tsx - ARCHIVO COMPLETO CON COGNITO REAL CORREGIDO
 import React, { useState, createContext, useContext, useEffect, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Quiz from './components/Quiz';
@@ -55,6 +55,7 @@ interface LoginFormData {
 const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
 const LEADERBOARD_REFRESH_INTERVAL = 30000;
 
+// CognitoAuthService - SERVICIO REAL CORREGIDO
 class CognitoAuthService {
   private config = {
     userPoolId: 'eu-west-3_lHUi9pWBS',
@@ -68,6 +69,9 @@ class CognitoAuthService {
     console.log('🔑 Client ID:', this.config.clientId);
     console.log('🌍 Region:', this.config.region);
   }
+
+  async signIn(email: string, password: string): Promise<any> {
+    console.log('🔐 Iniciando login con Cognito real...', email);
     
     // Validar dominio Amazon
     const amazonDomains = [
@@ -87,7 +91,7 @@ class CognitoAuthService {
         headers: {
           'Content-Type': 'application/x-amz-json-1.1',
           'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
-          'X-Amz-User-Agent': 'aws-amplify/5.0.0'
+          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
         },
         body: JSON.stringify({
           ClientId: this.config.clientId,
@@ -124,6 +128,11 @@ class CognitoAuthService {
       }
 
       console.log('✅ Login exitoso con Cognito real');
+      console.log('🎫 Tokens obtenidos:', {
+        hasAccessToken: !!result.AuthenticationResult?.AccessToken,
+        hasIdToken: !!result.AuthenticationResult?.IdToken,
+        hasRefreshToken: !!result.AuthenticationResult?.RefreshToken
+      });
       
       // Decodificar información del usuario del ID token
       let userInfo = {
@@ -186,7 +195,7 @@ class CognitoAuthService {
         headers: {
           'Content-Type': 'application/x-amz-json-1.1',
           'X-Amz-Target': 'AWSCognitoIdentityProviderService.SignUp',
-          'X-Amz-User-Agent': 'aws-amplify/5.0.0'
+          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
         },
         body: JSON.stringify({
           ClientId: this.config.clientId,
@@ -254,7 +263,7 @@ class CognitoAuthService {
         headers: {
           'Content-Type': 'application/x-amz-json-1.1',
           'X-Amz-Target': 'AWSCognitoIdentityProviderService.ConfirmSignUp',
-          'X-Amz-User-Agent': 'aws-amplify/5.0.0'
+          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
         },
         body: JSON.stringify({
           ClientId: this.config.clientId,
@@ -296,6 +305,64 @@ class CognitoAuthService {
       
       console.error('❌ Error de red en confirmación:', error);
       throw new Error('Error de conexión durante la confirmación. Verifica tu conexión a internet');
+    }
+  }
+
+  async resendConfirmationCode(email: string): Promise<any> {
+    console.log('🔄 Reenviando código de confirmación...', email);
+    
+    try {
+      const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-amz-json-1.1',
+          'X-Amz-Target': 'AWSCognitoIdentityProviderService.ResendConfirmationCode',
+          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
+        },
+        body: JSON.stringify({
+          ClientId: this.config.clientId,
+          Username: email,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        console.error('❌ Error reenviando código:', result);
+        throw new Error(result.message || 'Error reenviando código de confirmación');
+      }
+
+      console.log('✅ Código de confirmación reenviado');
+      return result;
+    } catch (error) {
+      console.error('❌ Error reenviando código:', error);
+      throw error;
+    }
+  }
+
+  async signOut(accessToken: string): Promise<void> {
+    console.log('🚪 Cerrando sesión en Cognito...');
+    
+    try {
+      const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-amz-json-1.1',
+          'X-Amz-Target': 'AWSCognitoIdentityProviderService.GlobalSignOut',
+          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
+        },
+        body: JSON.stringify({
+          AccessToken: accessToken,
+        }),
+      });
+
+      if (response.ok) {
+        console.log('✅ Sesión cerrada en Cognito');
+      } else {
+        console.warn('⚠️ Error cerrando sesión en servidor, pero continuando con logout local');
+      }
+    } catch (error) {
+      console.warn('⚠️ Error cerrando sesión en servidor:', error);
     }
   }
 
@@ -748,6 +815,7 @@ const LoginForm: React.FC<{
           </p>
           <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.8)' }}>
             <p style={{ margin: '5px 0' }}>✅ User Pool: eu-west-3_lHUi9pWBS</p>
+            <p style={{ margin: '5px 0' }}>✅ Client ID: 5ih9lsr8cv6gpvlblpar1sndf3</p>
             <p style={{ margin: '5px 0' }}>✅ Solo emails @amazon.com</p>
           </div>
         </div>
