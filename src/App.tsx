@@ -3,15 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-ro
 import Quiz from './components/Quiz';
 import { getLeaderboard, getStats } from './services/quizAPI';
 
-// Rutas de imágenes (ahora en public/)
-const AWSLogo = '/images/Amazon_Web_Services_Logo.svg.png';
-const RealZaragozaLogo = '/images/RealZaragoza.png';
-const SDHuescaLogo = '/images/SDHuesca.png';
-const ZAZClusterLogo = '/images/ZAZCluster.png';
-const BackgroundImage = '/images/background.png';
-const SponsorHuescaLogo = '/images/sponsorhuesca.png';
-const SponsorZaragozaLogo = '/images/sponsorzaragoza.png';
-
 // Types
 interface AuthContextType {
   isLoggedIn: boolean;
@@ -180,59 +171,6 @@ const FastAvatar: React.FC<{
           opacity: isLoading ? 0.3 : 1,
           transition: 'opacity 0.3s ease'
         }}
-      />
-    </div>
-  );
-};
-
-const ClubLogo: React.FC<{
-  src: string;
-  alt: string;
-  fallbackColor: string;
-  clubName: string;
-}> = ({ src, alt, fallbackColor, clubName }) => {
-  const [imageError, setImageError] = useState(false);
-
-  if (imageError) {
-    return (
-      <div style={{
-        width: '80px',
-        height: '80px',
-        background: fallbackColor,
-        borderRadius: '50%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        margin: '0 auto 15px auto',
-        fontSize: '1.5rem',
-        fontWeight: 'bold',
-        color: '#1a1a1a',
-        border: `3px solid ${fallbackColor}`
-      }}>
-        {clubName.substring(0, 2)}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{
-      width: '80px',
-      height: '80px',
-      margin: '0 auto 15px auto',
-      borderRadius: '50%',
-      overflow: 'hidden',
-      border: `3px solid ${fallbackColor}`,
-      background: 'white'
-    }}>
-      <img 
-        src={src}
-        alt={alt}
-        style={{ 
-          width: '100%', 
-          height: '100%', 
-          objectFit: 'cover' 
-        }}
-        onError={() => setImageError(true)}
       />
     </div>
   );
@@ -546,40 +484,18 @@ const HomePage: React.FC = () => {
   };
 
   return (
-    <div className="container" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div className="container">
       <header className="header">
-        <div className="auth-section" style={{ 
-          display: 'flex', 
-          justifyContent: 'flex-end', 
-          marginBottom: '20px' 
-        }}>
+        <div className="auth-section">
           {isLoggedIn ? (
-            <div className="user-info-header" style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '15px'
-            }}>
+            <div className="user-info-header">
               <FastAvatar
                 email={userEmail}
                 alias={userName}
                 size={35}
               />
-              <span style={{ color: '#00F5A0', fontWeight: '500' }}>
-                👋 Hola, {userName}
-              </span>
-              <button 
-                onClick={logout} 
-                className="btn-secondary"
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'white',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease'
-                }}
-              >
+              <span>👋 Hola, {userName}</span>
+              <button onClick={logout} className="btn-secondary">
                 Cerrar Sesión
               </button>
             </div>
@@ -588,77 +504,26 @@ const HomePage: React.FC = () => {
               onClick={() => setShowLoginModal(true)} 
               className="btn-secondary"
               disabled={authLoading}
-              style={{
-                padding: '10px 20px',
-                borderRadius: '8px',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                background: 'rgba(255, 255, 255, 0.1)',
-                color: 'white',
-                cursor: authLoading ? 'not-allowed' : 'pointer',
-                transition: 'all 0.3s ease',
-                opacity: authLoading ? 0.6 : 1
-              }}
             >
               {authLoading ? 'Cargando...' : 'Iniciar Sesión'}
             </button>
           )}
         </div>
         
-        {/* Logo principal con AWS y ZAZ */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          gap: '20px',
-          marginBottom: '20px',
-          flexWrap: 'wrap'
-        }}>
-          <img 
-            src={AWSLogo} 
-            alt="AWS Logo" 
-            style={{ height: '60px', objectFit: 'contain' }}
-          />
-          <img 
-            src={ZAZClusterLogo} 
-            alt="ZAZ Cluster" 
-            style={{ height: '80px', objectFit: 'contain' }}
-          />
-        </div>
+        {/* Logo AWS mejorado */}
+        <div className="aws-header-logo"></div>
         
-        <h1 style={{ 
-          fontSize: '3rem', 
-          margin: '20px 0 10px 0',
-          background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          textAlign: 'center'
-        }}>
-          🏆 ZAZ Football Quiz
-        </h1>
-        <p style={{ 
-          fontSize: '1.2rem', 
-          color: 'rgba(255, 255, 255, 0.8)',
-          textAlign: 'center',
-          marginBottom: '30px'
-        }}>
-          Test your knowledge about Real Zaragoza and AWS!
-        </p>
+        <h1>🏆 ZAZ Football Quiz</h1>
+        <p>Test your knowledge about Real Zaragoza and AWS!</p>
       </header>
 
       {/* Login Modal */}
       <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)}>
         <div style={{ textAlign: 'center', marginBottom: '25px' }}>
-          <h2 style={{ 
-            color: '#00F5A0', 
-            marginBottom: '10px',
-            fontSize: '1.8rem'
-          }}>
+          <h2 style={{ color: '#00F5A0', marginBottom: '10px', fontSize: '1.8rem' }}>
             🔐 Iniciar Sesión
           </h2>
-          <p style={{ 
-            color: 'rgba(255, 255, 255, 0.8)',
-            fontSize: '1rem'
-          }}>
+          <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '1rem' }}>
             Inicia sesión para participar en el quiz
           </p>
         </div>
@@ -682,92 +547,24 @@ const HomePage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Sección de clubes con imágenes */}
-      <section className="clubs-section" style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-        gap: '20px',
-        margin: '40px 0'
-      }}>
-        <div className="club-card zaragoza" style={{
-          background: 'rgba(255, 255, 255, 0.1)',
-          borderRadius: '15px',
-          padding: '25px',
-          textAlign: 'center',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          transition: 'all 0.3s ease',
-          backdropFilter: 'blur(10px)'
-        }}>
-          <ClubLogo
-            src={RealZaragozaLogo}
-            alt="Real Zaragoza"
-            fallbackColor="#00F5A0"
-            clubName="Real Zaragoza"
-          />
-          <h3 style={{ color: '#00F5A0', marginBottom: '10px' }}>Real Zaragoza</h3>
-          <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '15px' }}>
-            Test your knowledge about the team
-          </p>
-          
-          {/* Sponsor logo */}
-          <div style={{ marginTop: '15px' }}>
-            <img 
-              src={SponsorZaragozaLogo} 
-              alt="Sponsor Zaragoza" 
-              style={{ 
-                height: '30px', 
-                objectFit: 'contain',
-                opacity: 0.8
-              }}
-            />
-          </div>
+      {/* Sección de clubes con logos CSS */}
+      <section className="clubs-section">
+        <div className="club-card">
+          <div className="logo-zaragoza"></div>
+          <h3>Real Zaragoza</h3>
+          <p>Test your knowledge about the team</p>
         </div>
         
-        <div className="club-card huesca" style={{
-          background: 'rgba(255, 255, 255, 0.1)',
-          borderRadius: '15px',
-          padding: '25px',
-          textAlign: 'center',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          transition: 'all 0.3s ease',
-          backdropFilter: 'blur(10px)'
-        }}>
-          <ClubLogo
-            src={SDHuescaLogo}
-            alt="SD Huesca"
-            fallbackColor="#FFD700"
-            clubName="SD Huesca"
-          />
-          <h3 style={{ color: '#FFD700', marginBottom: '10px' }}>SD Huesca</h3>
-          <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '15px' }}>
-            Learn about the local rival
-          </p>
-          
-          {/* Sponsor logo */}
-          <div style={{ marginTop: '15px' }}>
-            <img 
-              src={SponsorHuescaLogo} 
-              alt="Sponsor Huesca" 
-              style={{ 
-                height: '30px', 
-                objectFit: 'contain',
-                opacity: 0.8
-              }}
-            />
-          </div>
+        <div className="club-card">
+          <div className="logo-huesca"></div>
+          <h3>SD Huesca</h3>
+          <p>Learn about the local rival</p>
         </div>
       </section>
 
       <main className="main-content">
-        <div className="competition-status status-active" style={{
-          background: 'rgba(0, 245, 160, 0.1)',
-          border: '1px solid rgba(0, 245, 160, 0.3)',
-          borderRadius: '15px',
-          padding: '30px',
-          marginBottom: '30px',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ color: '#00F5A0', marginBottom: '20px' }}>🎯 Quiz Challenge</h2>
+        <div className="competition-status">
+          <h2>🎯 Quiz Challenge</h2>
           <div style={{ 
             display: 'grid', 
             gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
@@ -778,67 +575,21 @@ const HomePage: React.FC = () => {
             <p><strong>Questions:</strong> 5 random questions per game</p>
             <p><strong>Time limit:</strong> 10 seconds per question</p>
           </div>
-          <div className="countdown" style={{
-            fontSize: '1.2rem',
-            color: isLoggedIn ? '#00F5A0' : '#FFA500',
-            fontWeight: '500'
-          }}>
+          <div className="countdown">
             {isLoggedIn ? '🎮 Ready to test your knowledge?' : '🔐 Please log in to play the quiz'}
           </div>
         </div>
 
         {/* CTA Section */}
-        <div className="cta-section" style={{ textAlign: 'center', margin: '40px 0' }}>
+        <div className="cta-section">
           {isLoggedIn ? (
             <Link to="/quiz" style={{ textDecoration: 'none' }}>
-              <button 
-                className="btn quiz-btn" 
-                style={{
-                  background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
-                  border: 'none',
-                  borderRadius: '15px',
-                  padding: '20px 40px',
-                  fontSize: '1.4rem',
-                  fontWeight: '600',
-                  color: '#1a1a1a',
-                  cursor: 'pointer',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  boxShadow: '0 8px 25px rgba(0, 245, 160, 0.3)',
-                  transition: 'all 0.3s ease',
-                  transform: 'scale(1)'
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.transform = 'scale(1.05)';
-                  e.currentTarget.style.boxShadow = '0 12px 35px rgba(0, 245, 160, 0.4)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.boxShadow = '0 8px 25px rgba(0, 245, 160, 0.3)';
-                }}
-              >
+              <button className="btn">
                 🎮 Play Quiz Now
               </button>
             </Link>
           ) : (
-            <button 
-              onClick={handleQuizClick}
-              className="btn quiz-btn" 
-              style={{
-                background: 'linear-gradient(45deg, #666, #999)',
-                border: 'none',
-                borderRadius: '15px',
-                padding: '20px 40px',
-                fontSize: '1.4rem',
-                fontWeight: '600',
-                color: 'white',
-                cursor: 'pointer',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-                boxShadow: '0 8px 25px rgba(0, 0, 0, 0.3)',
-                transition: 'all 0.3s ease'
-              }}
-            >
+            <button onClick={handleQuizClick} className="btn">
               🔐 Login to Play Quiz
             </button>
           )}
@@ -856,21 +607,8 @@ const HomePage: React.FC = () => {
         </div>
 
         {/* Quiz Statistics */}
-        <div className="stats-section" style={{
-          background: 'rgba(255, 255, 255, 0.1)',
-          borderRadius: '15px',
-          padding: '25px',
-          margin: '30px 0',
-          border: '1px solid rgba(255, 255, 255, 0.2)'
-        }}>
-          <h2 style={{ 
-            textAlign: 'center', 
-            marginBottom: '20px', 
-            color: '#00F5A0',
-            fontSize: '1.8rem'
-          }}>
-            📊 Quiz Statistics
-          </h2>
+        <div className="stats-section">
+          <h2>📊 Quiz Statistics</h2>
           
           <div style={{
             display: 'grid',
@@ -911,26 +649,14 @@ const HomePage: React.FC = () => {
         </div>
 
         {/* Ranking Section */}
-        <section className="ranking-section" style={{
-          background: 'rgba(255, 255, 255, 0.1)',
-          borderRadius: '15px',
-          padding: '25px',
-          margin: '30px 0',
-          border: '1px solid rgba(255, 255, 255, 0.2)'
-        }}>
+        <section className="ranking-section">
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             marginBottom: '25px'
           }}>
-            <h2 style={{ 
-              color: '#00F5A0',
-              fontSize: '1.8rem',
-              margin: 0
-            }}>
-              🏆 Ranking - Top Players
-            </h2>
+            <h2>🏆 Ranking - Top Players</h2>
             <button
               onClick={loadRankingData}
               disabled={isLoadingRanking}
@@ -1092,14 +818,8 @@ const HomePage: React.FC = () => {
       </main>
 
       {/* Rules Section */}
-      <section className="rules-section" style={{
-        background: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: '15px',
-        padding: '25px',
-        margin: '30px 0',
-        border: '1px solid rgba(255, 255, 255, 0.1)'
-      }}>
-        <h2 style={{ color: '#00F5A0', marginBottom: '20px' }}>📋 Quiz Rules</h2>
+      <section className="rules-section">
+        <h2>📋 Quiz Rules</h2>
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -1130,41 +850,8 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      <footer className="footer" style={{
-        textAlign: 'center',
-        padding: '30px 0',
-        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-        marginTop: '40px'
-      }}>
-        {/* Logos en el footer */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          gap: '30px',
-          marginBottom: '20px',
-          flexWrap: 'wrap'
-        }}>
-          <img 
-            src={AWSLogo} 
-            alt="AWS" 
-            style={{ height: '40px', objectFit: 'contain', opacity: 0.8 }}
-          />
-          <img 
-            src={RealZaragozaLogo} 
-            alt="Real Zaragoza" 
-            style={{ height: '40px', objectFit: 'contain', opacity: 0.8 }}
-          />
-          <img 
-            src={SDHuescaLogo} 
-            alt="SD Huesca" 
-            style={{ height: '40px', objectFit: 'contain', opacity: 0.8 }}
-          />
-        </div>
-        
-        <p style={{ marginBottom: '10px', color: 'rgba(255, 255, 255, 0.8)' }}>
-          © 2025 ZAZ Football Quiz | Test your knowledge about football, AWS, and Aragon
-        </p>
+      <footer className="footer">
+        <p>© 2025 ZAZ Football Quiz | Test your knowledge about football, AWS, and Aragon</p>
         <p style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.6)' }}>
           Developed for football and tech enthusiasts
         </p>
@@ -1283,15 +970,7 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <Router>
-        <div className="App" style={{
-          minHeight: '100vh',
-          position: 'relative',
-          color: 'white',
-          backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url(${BackgroundImage})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundAttachment: 'fixed'
-        }}>
+        <div className="App">
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route 
