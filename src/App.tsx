@@ -1,4 +1,4 @@
-// App.tsx - ARCHIVO COMPLETO CON COGNITO REAL CORREGIDO
+// App.tsx - ARCHIVO COMPLETO CON MIDWAY AUTHENTICATION
 import React, { useState, createContext, useContext, useEffect, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Quiz from './components/Quiz';
@@ -19,9 +19,7 @@ interface AuthContextType {
   userName: string;
   userEmail: string;
   userAlias: string;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, username: string) => Promise<void>;
-  confirmSignUp: (email: string, code: string) => Promise<void>;
+  login: () => Promise<void>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -46,327 +44,135 @@ interface QuizStats {
   completionRate: number;
 }
 
-interface LoginFormData {
-  email: string;
-  password: string;
-}
-
 // Constants
-const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
 const LEADERBOARD_REFRESH_INTERVAL = 30000;
 
-// CognitoAuthService - SERVICIO REAL CORREGIDO
-class CognitoAuthService {
+// MidwayAuthService - SERVICIO CON MIDWAY
+class MidwayAuthService {
   private config = {
-    userPoolId: 'eu-west-3_lHUi9pWBS',
-    clientId: '5ih9lsr8cv6gpvlblpar1sndf3', // ✅ CORREGIDO
-    region: 'eu-west-3'
+    midwayUrl: 'https://midway-auth.amazon.com',
+    redirectUri: window.location.origin,
+    clientId: 'zaz-football-quiz'
   };
 
   constructor() {
-    console.log('🔧 CognitoAuthService inicializado con configuración real');
-    console.log('📋 User Pool:', this.config.userPoolId);
-    console.log('🔑 Client ID:', this.config.clientId);
-    console.log('🌍 Region:', this.config.region);
+    console.log('🔧 MidwayAuthService inicializado');
+    console.log('🌐 Midway URL:', this.config.midwayUrl);
+    console.log('🔄 Redirect URI:', this.config.redirectUri);
   }
 
-  async signIn(email: string, password: string): Promise<any> {
-    console.log('🔐 Iniciando login con Cognito real...', email);
+  // Redirigir a Midway para autenticación
+  redirectToMidway(): void {
+    const params = new URLSearchParams({
+      client_id: this.config.clientId,
+      redirect_uri: this.config.redirectUri,
+      response_type: 'code',
+      scope: 'openid profile email'
+    });
+
+    const midwayAuthUrl = `${this.config.midwayUrl}/oauth2/authorize?${params.toString()}`;
+    console.log('🔐 Redirigiendo a Midway:', midwayAuthUrl);
     
-    // Validar dominio Amazon
-    const amazonDomains = [
-      '@amazon.com', '@amazon.co.uk', '@amazon.de', 
-      '@amazon.fr', '@amazon.es', '@amazon.it',
-      '@amazon.ca', '@amazon.com.au', '@amazon.co.jp'
-    ];
-    
-    const isAmazonEmail = amazonDomains.some(domain => email.endsWith(domain));
-    if (!isAmazonEmail) {
-      throw new Error('Solo empleados de Amazon pueden acceder. Usa tu email corporativo (@amazon.com)');
+    window.location.href = midwayAuthUrl;
+  }
+
+  // Procesar respuesta de Midway
+  async handleMidwayCallback(): Promise<any> {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const error = urlParams.get('error');
+
+    if (error) {
+      throw new Error(`Error de Midway: ${error}`);
     }
+
+    if (!code) {
+      throw new Error('No se recibió código de autorización de Midway');
+    }
+
+    console.log('✅ Código de autorización recibido de Midway');
     
+    // Intercambiar código por tokens
+    return await this.exchangeCodeForTokens(code);
+  }
+
+  // Intercambiar código por tokens
+  private async exchangeCodeForTokens(code: string): Promise<any> {
     try {
-      const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
+      const response = await fetch(`${this.config.midwayUrl}/oauth2/token`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-amz-json-1.1',
-          'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
-          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify({
-          ClientId: this.config.clientId,
-          AuthFlow: 'USER_PASSWORD_AUTH',
-          AuthParameters: {
-            USERNAME: email,
-            PASSWORD: password,
-          },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: this.config.clientId,
+          code: code,
+          redirect_uri: this.config.redirectUri,
         }),
       });
 
       const result = await response.json();
-      
+
       if (!response.ok) {
-        console.error('❌ Error response from Cognito:', result);
-        
-        // Manejar errores específicos de Cognito
-        switch (result.__type) {
-          case 'NotAuthorizedException':
-            throw new Error('Email o contraseña incorrectos');
-          case 'UserNotConfirmedException':
-            throw new Error('Usuario no confirmado. Revisa tu email para el código de verificación');
-          case 'UserNotFoundException':
-            throw new Error('Usuario no encontrado. ¿Te has registrado?');
-          case 'TooManyRequestsException':
-            throw new Error('Demasiados intentos. Espera un momento antes de intentar de nuevo');
-          case 'InvalidParameterException':
-            throw new Error('Parámetros inválidos. Verifica tu email y contraseña');
-          case 'ResourceNotFoundException':
-            throw new Error('Configuración de autenticación no encontrada');
-          default:
-            throw new Error(result.message || result.__type || 'Error al iniciar sesión');
-        }
+        throw new Error(result.error_description || 'Error obteniendo tokens');
       }
 
-      console.log('✅ Login exitoso con Cognito real');
-      console.log('🎫 Tokens obtenidos:', {
-        hasAccessToken: !!result.AuthenticationResult?.AccessToken,
-        hasIdToken: !!result.AuthenticationResult?.IdToken,
-        hasRefreshToken: !!result.AuthenticationResult?.RefreshToken
-      });
+      console.log('🎫 Tokens obtenidos de Midway');
       
-      // Decodificar información del usuario del ID token
-      let userInfo = {
-        email: email,
-        alias: email.split('@')[0],
-        name: email.split('@')[0]
-      };
-
-      if (result.AuthenticationResult?.IdToken) {
-        try {
-          const decodedToken = this.decodeJWT(result.AuthenticationResult.IdToken);
-          userInfo = {
-            email: decodedToken.email || email,
-            alias: decodedToken.preferred_username || decodedToken['cognito:username'] || email.split('@')[0],
-            name: decodedToken.name || decodedToken.preferred_username || email.split('@')[0]
-          };
-          console.log('👤 Información del usuario decodificada:', userInfo);
-        } catch (decodeError) {
-          console.warn('⚠️ No se pudo decodificar el token, usando datos básicos');
-        }
-      }
+      // Decodificar información del usuario
+      const userInfo = this.decodeJWT(result.id_token);
       
       return {
-        AuthenticationResult: result.AuthenticationResult,
-        user: userInfo
-      };
-    } catch (error) {
-      if (error.message) {
-        throw error; // Re-throw errors we've already handled
-      }
-      
-      console.error('❌ Error de red o conexión:', error);
-      throw new Error('Error de conexión. Verifica tu conexión a internet y vuelve a intentar');
-    }
-  }
-
-  async signUp(email: string, password: string, username: string): Promise<any> {
-    console.log('📝 Iniciando registro con Cognito real...', email);
-    
-    // Validar dominio Amazon
-    const amazonDomains = [
-      '@amazon.com', '@amazon.co.uk', '@amazon.de', 
-      '@amazon.fr', '@amazon.es', '@amazon.it',
-      '@amazon.ca', '@amazon.com.au', '@amazon.co.jp'
-    ];
-    
-    const isAmazonEmail = amazonDomains.some(domain => email.endsWith(domain));
-    if (!isAmazonEmail) {
-      throw new Error('Solo empleados de Amazon pueden registrarse. Usa tu email corporativo (@amazon.com)');
-    }
-
-    // Validar contraseña
-    if (password.length < 8) {
-      throw new Error('La contraseña debe tener al menos 8 caracteres');
-    }
-    
-    try {
-      const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-amz-json-1.1',
-          'X-Amz-Target': 'AWSCognitoIdentityProviderService.SignUp',
-          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
-        },
-        body: JSON.stringify({
-          ClientId: this.config.clientId,
-          Username: email,
-          Password: password,
-          UserAttributes: [
-            { Name: 'email', Value: email },
-            { Name: 'preferred_username', Value: username }
-          ],
-        }),
-      });
-
-      const result = await response.json();
-      
-      if (!response.ok) {
-        console.error('❌ Error response from Cognito SignUp:', result);
-        
-        // Manejar errores específicos de registro
-        switch (result.__type) {
-          case 'UsernameExistsException':
-            throw new Error('Este email ya está registrado. ¿Quieres iniciar sesión?');
-          case 'InvalidPasswordException':
-            throw new Error('Contraseña inválida. Debe tener al menos 8 caracteres con mayúsculas, minúsculas y números');
-          case 'InvalidParameterException':
-            throw new Error('Parámetros inválidos. Verifica tu email y contraseña');
-          case 'TooManyRequestsException':
-            throw new Error('Demasiados intentos. Espera un momento antes de intentar de nuevo');
-          case 'LimitExceededException':
-            throw new Error('Límite de intentos excedido. Intenta más tarde');
-          default:
-            throw new Error(result.message || result.__type || 'Error al registrarse');
-        }
-      }
-
-      console.log('✅ Usuario registrado exitosamente en Cognito real');
-      console.log('📧 Código de confirmación enviado a:', email);
-      
-      return {
-        UserSub: result.UserSub,
-        CodeDeliveryDetails: result.CodeDeliveryDetails || {
-          Destination: email,
-          DeliveryMedium: 'EMAIL'
+        tokens: result,
+        user: {
+          email: userInfo.email,
+          name: userInfo.name || userInfo.preferred_username || userInfo.email?.split('@')[0],
+          alias: userInfo.preferred_username || userInfo.email?.split('@')[0],
+          groups: userInfo.groups || []
         }
       };
     } catch (error) {
-      if (error.message) {
-        throw error; // Re-throw errors we've already handled
-      }
-      
-      console.error('❌ Error de red en registro:', error);
-      throw new Error('Error de conexión durante el registro. Verifica tu conexión a internet');
-    }
-  }
-
-  async confirmSignUp(email: string, code: string): Promise<any> {
-    console.log('✉️ Confirmando registro en Cognito real...', email);
-    
-    if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
-      throw new Error('El código debe ser de 6 dígitos numéricos');
-    }
-    
-    try {
-      const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-amz-json-1.1',
-          'X-Amz-Target': 'AWSCognitoIdentityProviderService.ConfirmSignUp',
-          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
-        },
-        body: JSON.stringify({
-          ClientId: this.config.clientId,
-          Username: email,
-          ConfirmationCode: code,
-        }),
-      });
-
-      const result = await response.json();
-      
-      if (!response.ok) {
-        console.error('❌ Error response from Cognito ConfirmSignUp:', result);
-        
-        // Manejar errores específicos de confirmación
-        switch (result.__type) {
-          case 'CodeMismatchException':
-            throw new Error('Código incorrecto. Verifica el código enviado a tu email');
-          case 'ExpiredCodeException':
-            throw new Error('El código ha expirado. Solicita un nuevo código');
-          case 'UserNotFoundException':
-            throw new Error('Usuario no encontrado. ¿Te registraste correctamente?');
-          case 'NotAuthorizedException':
-            throw new Error('Usuario ya confirmado o código inválido');
-          case 'TooManyFailedAttemptsException':
-            throw new Error('Demasiados intentos fallidos. Espera antes de intentar de nuevo');
-          case 'LimitExceededException':
-            throw new Error('Límite de intentos excedido. Intenta más tarde');
-          default:
-            throw new Error(result.message || result.__type || 'Error al confirmar registro');
-        }
-      }
-
-      console.log('✅ Registro confirmado exitosamente en Cognito real');
-      return result;
-    } catch (error) {
-      if (error.message) {
-        throw error; // Re-throw errors we've already handled
-      }
-      
-      console.error('❌ Error de red en confirmación:', error);
-      throw new Error('Error de conexión durante la confirmación. Verifica tu conexión a internet');
-    }
-  }
-
-  async resendConfirmationCode(email: string): Promise<any> {
-    console.log('🔄 Reenviando código de confirmación...', email);
-    
-    try {
-      const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-amz-json-1.1',
-          'X-Amz-Target': 'AWSCognitoIdentityProviderService.ResendConfirmationCode',
-          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
-        },
-        body: JSON.stringify({
-          ClientId: this.config.clientId,
-          Username: email,
-        }),
-      });
-
-      const result = await response.json();
-      
-      if (!response.ok) {
-        console.error('❌ Error reenviando código:', result);
-        throw new Error(result.message || 'Error reenviando código de confirmación');
-      }
-
-      console.log('✅ Código de confirmación reenviado');
-      return result;
-    } catch (error) {
-      console.error('❌ Error reenviando código:', error);
+      console.error('❌ Error intercambiando código por tokens:', error);
       throw error;
     }
   }
 
-  async signOut(accessToken: string): Promise<void> {
-    console.log('🚪 Cerrando sesión en Cognito...');
-    
-    try {
-      const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-amz-json-1.1',
-          'X-Amz-Target': 'AWSCognitoIdentityProviderService.GlobalSignOut',
-          'X-Amz-User-Agent': 'aws-amplify/6.0.0'
-        },
-        body: JSON.stringify({
-          AccessToken: accessToken,
-        }),
-      });
+  // Obtener información del usuario actual
+  async getCurrentUser(): Promise<any> {
+    const savedSession = localStorage.getItem('midwaySession');
+    if (!savedSession) {
+      throw new Error('No hay sesión activa');
+    }
 
-      if (response.ok) {
-        console.log('✅ Sesión cerrada en Cognito');
-      } else {
-        console.warn('⚠️ Error cerrando sesión en servidor, pero continuando con logout local');
+    try {
+      const session = JSON.parse(savedSession);
+      
+      // Verificar si el token no ha expirado
+      const tokenPayload = this.decodeJWT(session.tokens.id_token);
+      const now = Math.floor(Date.now() / 1000);
+      
+      if (tokenPayload.exp < now) {
+        throw new Error('Token expirado');
       }
+
+      return session.user;
     } catch (error) {
-      console.warn('⚠️ Error cerrando sesión en servidor:', error);
+      localStorage.removeItem('midwaySession');
+      throw new Error('Sesión inválida');
     }
   }
 
-  // Utilidades privadas
+  // Cerrar sesión
+  logout(): void {
+    localStorage.removeItem('midwaySession');
+    
+    // Redirigir a logout de Midway
+    const logoutUrl = `${this.config.midwayUrl}/oauth2/logout?redirect_uri=${encodeURIComponent(this.config.redirectUri)}`;
+    window.location.href = logoutUrl;
+  }
+
+  // Decodificar JWT
   private decodeJWT(token: string): any {
     try {
       const base64Url = token.split('.')[1];
@@ -387,22 +193,23 @@ class CognitoAuthService {
     }
   }
 
-  // Método para verificar si el servicio está configurado correctamente
-  isConfigured(): boolean {
-    return !!(this.config.userPoolId && this.config.clientId && this.config.region);
+  // Verificar si hay callback de Midway
+  isCallback(): boolean {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.has('code') || urlParams.has('error');
   }
 
   // Método para obtener la configuración actual
   getConfig() {
     return {
-      userPoolId: this.config.userPoolId,
+      midwayUrl: this.config.midwayUrl,
       clientId: this.config.clientId,
-      region: this.config.region
+      redirectUri: this.config.redirectUri
     };
   }
 }
 
-const cognitoAuthService = new CognitoAuthService();
+const midwayAuthService = new MidwayAuthService();
 
 // Auth Context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -418,26 +225,6 @@ export const useAuth = () => {
 // Utility Functions
 const getPlayerAvatar = (email: string, alias: string): string => {
   return `https://internal-cdn.amazon.com/badgephotos.amazon.com/?fullsizeimage=1&uid=${alias}`;
-};
-
-const extractAliasFromEmail = (email: string): string => {
-  return email.split('@')[0];
-};
-
-const validateLoginForm = (email: string, password: string): string | null => {
-  if (!email || !password) {
-    return 'Por favor ingresa email y contraseña';
-  }
-  
-  if (!AMAZON_EMAIL_REGEX.test(email)) {
-    return 'Por favor usa tu email corporativo de Amazon (@amazon.com)';
-  }
-  
-  if (password.length < 8) {
-    return 'La contraseña debe tener al menos 8 caracteres';
-  }
-  
-  return null;
 };
 
 // Components
@@ -594,233 +381,69 @@ const ClubLogo: React.FC<{
   );
 };
 
-// LoginForm Component - SIN FEDERATE, SOLO COGNITO
+// LoginForm Component - CON MIDWAY
 const LoginForm: React.FC<{
-  onSubmit: (data: LoginFormData) => Promise<void>;
-  onRegister: (data: LoginFormData & { username: string }) => Promise<void>;
-  onConfirm: (email: string, code: string) => Promise<void>;
+  onSubmit: () => Promise<void>;
   isLoading: boolean;
-}> = ({ onSubmit, onRegister, onConfirm, isLoading }) => {
-  const [formData, setFormData] = useState<LoginFormData>({ email: '', password: '' });
-  const [username, setUsername] = useState<string>('');
-  const [confirmationCode, setConfirmationCode] = useState<string>('');
-  const [error, setError] = useState<string>('');
-  const [mode, setMode] = useState<'login' | 'register' | 'confirm'>('login');
-  const [pendingEmail, setPendingEmail] = useState<string>('');
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
-    e.preventDefault();
-    setError('');
-    
-    try {
-      if (mode === 'confirm') {
-        await onConfirm(pendingEmail, confirmationCode);
-        setMode('login'); // Volver al login después de confirmar
-        alert('¡Registro confirmado! Ahora puedes iniciar sesión.');
-      } else if (mode === 'register') {
-        const validationError = validateLoginForm(formData.email, formData.password);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        if (!username) {
-          setError('Por favor ingresa tu nombre de usuario');
-          return;
-        }
-        setPendingEmail(formData.email);
-        await onRegister({ ...formData, username });
-        setMode('confirm');
-      } else {
-        const validationError = validateLoginForm(formData.email, formData.password);
-        if (validationError) {
-          setError(validationError);
-          return;
-        }
-        await onSubmit(formData);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error en la autenticación');
-    }
-  };
-
-  const handleInputChange = (field: keyof LoginFormData) => (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    setFormData(prev => ({ ...prev, [field]: e.target.value }));
-    if (error) setError('');
-  };
-
+}> = ({ onSubmit, isLoading }) => {
   return (
-    <form onSubmit={handleSubmit} style={{ width: '100%' }}>
-      {error && (
-        <div style={{
-          background: 'rgba(255, 107, 107, 0.2)',
-          border: '1px solid rgba(255, 107, 107, 0.5)',
-          borderRadius: '8px',
-          padding: '12px',
-          marginBottom: '20px',
-          color: '#FF6B6B',
-          fontSize: '0.9rem',
-          textAlign: 'center'
-        }}>
-          ❌ {error}
-        </div>
-      )}
-      
+    <div style={{ width: '100%', textAlign: 'center' }}>
       <div style={{
         background: 'rgba(0, 245, 160, 0.1)',
         border: '1px solid rgba(0, 245, 160, 0.3)',
         borderRadius: '12px',
-        padding: '15px',
-        marginBottom: '20px',
-        textAlign: 'center'
+        padding: '20px',
+        marginBottom: '20px'
       }}>
-        <p style={{ color: '#00F5A0', fontSize: '0.9rem', margin: 0 }}>
-          🔒 Autenticación real con AWS Cognito
+        <h3 style={{ color: '#00F5A0', margin: '0 0 10px 0' }}>
+          🔐 Autenticación con Midway
+        </h3>
+        <p style={{ color: 'rgba(255, 255, 255, 0.8)', margin: 0, fontSize: '0.9rem' }}>
+          Usa tu cuenta corporativa de Amazon para acceder
         </p>
       </div>
 
-      {mode === 'confirm' && (
-        <div className="input-group">
-          <label htmlFor="code">Código de verificación:</label>
-          <input 
-            type="text" 
-            id="code" 
-            value={confirmationCode}
-            onChange={(e) => setConfirmationCode(e.target.value)}
-            placeholder="123456" 
-            required 
-            disabled={isLoading}
-            maxLength={6}
-          />
-          <p style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '5px' }}>
-            📧 Revisa tu email: {pendingEmail}
-          </p>
-        </div>
-      )}
-
-      {(mode === 'login' || mode === 'register') && (
-        <>
-          {mode === 'register' && (
-            <div className="input-group">
-              <label htmlFor="username">Nombre de usuario:</label>
-              <input 
-                type="text" 
-                id="username" 
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="tu-alias" 
-                required 
-                disabled={isLoading}
-              />
-            </div>
-          )}
-          
-          <div className="input-group">
-            <label htmlFor="email">Email corporativo:</label>
-            <input 
-              type="email" 
-              id="email" 
-              value={formData.email}
-              onChange={handleInputChange('email')}
-              placeholder="tu-usuario@amazon.com" 
-              required 
-              disabled={isLoading}
-            />
-          </div>
-          
-          <div className="input-group">
-            <label htmlFor="password">Contraseña:</label>
-            <input 
-              type="password" 
-              id="password" 
-              value={formData.password}
-              onChange={handleInputChange('password')}
-              placeholder="••••••••" 
-              required 
-              disabled={isLoading}
-              minLength={8}
-            />
-          </div>
-        </>
-      )}
-      
-      <button type="submit" disabled={isLoading} className="btn">
+      <button 
+        onClick={onSubmit} 
+        disabled={isLoading} 
+        className="btn"
+        style={{ width: '100%', padding: '15px' }}
+      >
         {isLoading ? (
           <>
             <LoadingSpinner size="small" />
-            {mode === 'confirm' ? 'Verificando...' : mode === 'register' ? 'Registrando...' : 'Iniciando sesión...'}
+            Redirigiendo a Midway...
           </>
         ) : (
-          mode === 'confirm' ? '✅ Verificar Código' : mode === 'register' ? '📝 Registrarse' : '✅ Iniciar Sesión'
+          <>
+            🚀 Iniciar Sesión con Midway
+          </>
         )}
       </button>
 
-      {(mode === 'login' || mode === 'register') && (
-        <div style={{ textAlign: 'center', marginTop: '15px' }}>
-          <button
-            type="button"
-            onClick={() => setMode(mode === 'register' ? 'login' : 'register')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#00D9F5',
-              cursor: 'pointer',
-              textDecoration: 'underline',
-              fontSize: '0.9rem'
-            }}
-            disabled={isLoading}
-          >
-            {mode === 'register' ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'}
-          </button>
-        </div>
-      )}
-
-      {mode === 'confirm' && (
-        <div style={{ textAlign: 'center', marginTop: '15px' }}>
-          <button
-            type="button"
-            onClick={() => setMode('login')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'rgba(255, 255, 255, 0.6)',
-              cursor: 'pointer',
-              textDecoration: 'underline',
-              fontSize: '0.8rem'
-            }}
-            disabled={isLoading}
-          >
-            ← Volver al login
-          </button>
-        </div>
-      )}
-
-      {mode === 'login' && (
-        <div style={{ 
-          textAlign: 'center', 
-          marginTop: '20px',
-          padding: '15px',
-          background: 'rgba(0, 217, 245, 0.1)',
-          borderRadius: '8px',
-          border: '1px solid rgba(0, 217, 245, 0.3)'
+      <div style={{ 
+        marginTop: '20px',
+        padding: '15px',
+        background: 'rgba(0, 217, 245, 0.1)',
+        borderRadius: '8px',
+        border: '1px solid rgba(0, 217, 245, 0.3)'
+      }}>
+        <p style={{ 
+          fontSize: '0.8rem', 
+          color: '#00D9F5',
+          margin: '0 0 10px 0',
+          fontWeight: 'bold'
         }}>
-          <p style={{ 
-            fontSize: '0.8rem', 
-            color: '#00D9F5',
-            margin: '0 0 10px 0',
-            fontWeight: 'bold'
-          }}>
-            🔐 Autenticación con Cognito Real
-          </p>
-          <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-            <p style={{ margin: '5px 0' }}>✅ User Pool: eu-west-3_lHUi9pWBS</p>
-            <p style={{ margin: '5px 0' }}>✅ Client ID: 5ih9lsr8cv6gpvlblpar1sndf3</p>
-            <p style={{ margin: '5px 0' }}>✅ Solo emails @amazon.com</p>
-          </div>
+          ℹ️ Sobre Midway
+        </p>
+        <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+          <p style={{ margin: '5px 0' }}>✅ Sistema de autenticación interno de Amazon</p>
+          <p style={{ margin: '5px 0' }}>✅ Acceso seguro con tu cuenta corporativa</p>
+          <p style={{ margin: '5px 0' }}>✅ No necesitas crear nueva cuenta</p>
+          <p style={{ margin: '5px 0' }}>🌐 URL: {midwayAuthService.getConfig().midwayUrl}</p>
         </div>
-      )}
-    </form>
+      </div>
+    </div>
   );
 };
 
@@ -857,7 +480,7 @@ const Modal: React.FC<{
   );
 };
 
-// AuthProvider con Cognito real
+// AuthProvider con Midway
 const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [userName, setUserName] = useState<string>('');
@@ -865,106 +488,70 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const [userAlias, setUserAlias] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  const authService = cognitoAuthService;
+  const authService = midwayAuthService;
 
   useEffect(() => {
-    checkExistingSession();
+    handleInitialAuth();
     
     // Mostrar información de desarrollo
     if (process.env.NODE_ENV === 'development') {
       console.log('🎮 ZAZ Football Quiz - Modo de desarrollo');
-      console.log('🔐 Usando AWS Cognito real');
-      console.log('📋 User Pool:', authService.getConfig().userPoolId);
-      console.log('🔑 Client ID:', authService.getConfig().clientId);
-      console.log('🌍 Region:', authService.getConfig().region);
+      console.log('🔐 Usando Midway Authentication');
+      console.log('🌐 Midway URL:', authService.getConfig().midwayUrl);
+      console.log('🆔 Client ID:', authService.getConfig().clientId);
+      console.log('🔄 Redirect URI:', authService.getConfig().redirectUri);
     }
   }, []);
 
-  const checkExistingSession = () => {
-    const savedSession = localStorage.getItem('cognitoSession');
-    if (savedSession) {
-      try {
-        const session = JSON.parse(savedSession);
-        const loginTime = new Date(session.loginTime);
-        const now = new Date();
-        const hoursSinceLogin = (now.getTime() - loginTime.getTime()) / (1000 * 60 * 60);
+  const handleInitialAuth = async () => {
+    setIsLoading(true);
+    
+    try {
+      // Verificar si es un callback de Midway
+      if (authService.isCallback()) {
+        console.log('🔄 Procesando callback de Midway...');
+        const result = await authService.handleMidwayCallback();
         
-        if (hoursSinceLogin < 8) {
+        // Guardar sesión
+        const sessionData = {
+          user: result.user,
+          tokens: result.tokens,
+          loginTime: new Date().toISOString()
+        };
+        localStorage.setItem('midwaySession', JSON.stringify(sessionData));
+        
+        // Actualizar estado
+        setIsLoggedIn(true);
+        setUserEmail(result.user.email);
+        setUserName(result.user.name);
+        setUserAlias(result.user.alias);
+        
+        // Limpiar URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        console.log('✅ Login completado con Midway');
+      } else {
+        // Verificar sesión existente
+        try {
+          const user = await authService.getCurrentUser();
           setIsLoggedIn(true);
-          setUserName(session.userName);
-          setUserEmail(session.userEmail);
-          setUserAlias(session.userAlias);
-          console.log('✅ Sesión restaurada para:', session.userEmail);
-        } else {
-          localStorage.removeItem('cognitoSession');
-          console.log('⏰ Sesión expirada, limpiando...');
+          setUserEmail(user.email);
+          setUserName(user.name);
+          setUserAlias(user.alias);
+          console.log('✅ Sesión restaurada:', user.email);
+        } catch (error) {
+          console.log('ℹ️ No hay sesión activa');
         }
-      } catch (error) {
-        console.error('Error loading session:', error);
-        localStorage.removeItem('cognitoSession');
       }
-    }
-  };
-
-  const login = async (email: string, password: string): Promise<void> => {
-    if (!email || !password) {
-      throw new Error('Email y contraseña son requeridos');
-    }
-    
-    setIsLoading(true);
-    
-    try {
-      const result = await authService.signIn(email, password);
-      
-      setIsLoggedIn(true);
-      setUserEmail(result.user.email);
-      setUserName(result.user.name);
-      setUserAlias(result.user.alias);
-      
-      const sessionData = {
-        userName: result.user.name,
-        userEmail: result.user.email,
-        userAlias: result.user.alias,
-        loginTime: new Date().toISOString(),
-        tokens: result.AuthenticationResult
-      };
-      localStorage.setItem('cognitoSession', JSON.stringify(sessionData));
-      
-      console.log('✅ Login completado y sesión guardada');
     } catch (error) {
-      console.error('❌ Error en login:', error);
-      throw error;
+      console.error('❌ Error en autenticación:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (email: string, password: string, username: string): Promise<void> => {
-    setIsLoading(true);
-    
-    try {
-      await authService.signUp(email, password, username);
-      console.log('✅ Registro iniciado, esperando confirmación');
-    } catch (error) {
-      console.error('❌ Error en registro:', error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const confirmSignUp = async (email: string, code: string): Promise<void> => {
-    setIsLoading(true);
-    
-    try {
-      await authService.confirmSignUp(email, code);
-      console.log('✅ Confirmación completada');
-    } catch (error) {
-      console.error('❌ Error en confirmación:', error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
+  const login = async (): Promise<void> => {
+    authService.redirectToMidway();
   };
 
   const logout = (): void => {
@@ -972,8 +559,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     setUserName('');
     setUserEmail('');
     setUserAlias('');
-    localStorage.removeItem('cognitoSession');
-    console.log('🚪 Logout completado');
+    authService.logout();
   };
 
   return (
@@ -982,9 +568,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       userName, 
       userEmail, 
       userAlias, 
-      login, 
-      register,
-      confirmSignUp,
+      login,
       logout, 
       isLoading 
     }}>
@@ -1005,7 +589,7 @@ const HomePage: React.FC = () => {
     completionRate: 0
   });
   const [isLoadingRanking, setIsLoadingRanking] = useState<boolean>(true);
-  const { isLoggedIn, userName, userEmail, login, register, confirmSignUp, logout, isLoading: authLoading } = useAuth();
+  const { isLoggedIn, userName, userEmail, login, logout, isLoading: authLoading } = useAuth();
 
   const loadRankingData = useCallback(async () => {
     try {
@@ -1033,21 +617,10 @@ const HomePage: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadRankingData]);
 
-  // handleLogin actualizado para Cognito
-  const handleLogin = async (formData: LoginFormData): Promise<void> => {
-    await login(formData.email, formData.password);
+  const handleLogin = async (): Promise<void> => {
+    await login();
     setShowLoginModal(false);
     setTimeout(loadRankingData, 1000);
-  };
-
-  const handleRegister = async (formData: LoginFormData & { username: string }): Promise<void> => {
-    await register(formData.email, formData.password, formData.username);
-    // No cerrar modal, esperar confirmación
-  };
-
-  const handleConfirm = async (email: string, code: string): Promise<void> => {
-    await confirmSignUp(email, code);
-    // El modal se cierra automáticamente en LoginForm
   };
 
   const handleQuizClick = (): void => {
@@ -1149,11 +722,9 @@ const HomePage: React.FC = () => {
       <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)}>
         <div className="login-container">
           <h2>🔐 Acceso Amazon</h2>
-          <p>Inicia sesión con tu cuenta de Amazon</p>
+          <p>Inicia sesión con tu cuenta corporativa</p>
           <LoginForm 
             onSubmit={handleLogin} 
-            onRegister={handleRegister}
-            onConfirm={handleConfirm}
             isLoading={authLoading} 
           />
         </div>
@@ -1490,7 +1061,7 @@ const HomePage: React.FC = () => {
         </div>
         
         <p>© 2025 ZAZ Football Quiz | Test your knowledge about football, AWS, and Aragon</p>
-        <p>Developed for football and tech enthusiasts</p>
+        <p>Developed for football and tech enthusiasts | Powered by Midway Authentication</p>
       </footer>
     </div>
   );
