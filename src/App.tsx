@@ -1,4 +1,4 @@
-// App.tsx - ARCHIVO COMPLETO CON MIDWAY AUTHENTICATION
+// App.tsx - ARCHIVO COMPLETO CON MIDWAY REAL (SIN OAUTH2)
 import React, { useState, createContext, useContext, useEffect, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Quiz from './components/Quiz';
@@ -19,7 +19,7 @@ interface AuthContextType {
   userName: string;
   userEmail: string;
   userAlias: string;
-  login: () => Promise<void>;
+  login: (email: string) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -44,172 +44,161 @@ interface QuizStats {
   completionRate: number;
 }
 
+interface LoginFormData {
+  email: string;
+}
+
 // Constants
 const LEADERBOARD_REFRESH_INTERVAL = 30000;
+const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
 
-// MidwayAuthService - SERVICIO CON MIDWAY
-class MidwayAuthService {
+// MidwayDirectAuthService - SERVICIO DIRECTO CON MIDWAY
+class MidwayDirectAuthService {
   private config = {
     midwayUrl: 'https://midway-auth.amazon.com',
-    redirectUri: window.location.origin,
-    clientId: 'zaz-football-quiz'
+    appName: 'ZAZ Football Quiz'
   };
 
   constructor() {
-    console.log('🔧 MidwayAuthService inicializado');
+    console.log('🔧 MidwayDirectAuthService inicializado');
     console.log('🌐 Midway URL:', this.config.midwayUrl);
-    console.log('🔄 Redirect URI:', this.config.redirectUri);
+    console.log('📱 App:', this.config.appName);
+  }
+
+  // Verificar si el usuario está autenticado en Midway
+  async checkMidwayAuth(): Promise<any> {
+    console.log('🔍 Verificando autenticación en Midway...');
+    
+    try {
+      // Intentar hacer una petición a Midway para verificar autenticación
+      const response = await fetch(`${this.config.midwayUrl}/`, {
+        method: 'GET',
+        credentials: 'include', // Incluir cookies de sesión
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': 'ZAZ-Football-Quiz/1.0'
+        }
+      });
+
+      const htmlContent = await response.text();
+      
+      // Buscar el nombre de usuario en el HTML
+      const welcomeMatch = htmlContent.match(/Welcome\s+([^!]+)!/i);
+      
+      if (welcomeMatch && welcomeMatch[1]) {
+        const username = welcomeMatch[1].trim();
+        console.log('✅ Usuario autenticado en Midway:', username);
+        
+        return {
+          isAuthenticated: true,
+          username: username,
+          email: `${username}@amazon.com`, // Asumir dominio amazon.com
+          alias: username,
+          source: 'midway-direct'
+        };
+      } else {
+        console.log('❌ Usuario no autenticado en Midway');
+        return {
+          isAuthenticated: false,
+          redirectUrl: this.config.midwayUrl
+        };
+      }
+    } catch (error) {
+      console.error('❌ Error verificando Midway:', error);
+      throw new Error('Error conectando con Midway. Verifica tu conexión.');
+    }
   }
 
   // Redirigir a Midway para autenticación
   redirectToMidway(): void {
-    const params = new URLSearchParams({
-      client_id: this.config.clientId,
-      redirect_uri: this.config.redirectUri,
-      response_type: 'code',
-      scope: 'openid profile email'
-    });
-
-    const midwayAuthUrl = `${this.config.midwayUrl}/oauth2/authorize?${params.toString()}`;
-    console.log('🔐 Redirigiendo a Midway:', midwayAuthUrl);
-    
-    window.location.href = midwayAuthUrl;
+    console.log('🔄 Redirigiendo a Midway para autenticación...');
+    window.open(this.config.midwayUrl, '_blank', 'width=800,height=600');
   }
 
-  // Procesar respuesta de Midway
-  async handleMidwayCallback(): Promise<any> {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const error = urlParams.get('error');
-
-    if (error) {
-      throw new Error(`Error de Midway: ${error}`);
-    }
-
-    if (!code) {
-      throw new Error('No se recibió código de autorización de Midway');
-    }
-
-    console.log('✅ Código de autorización recibido de Midway');
+  // Login con email (verificar que coincida con Midway)
+  async loginWithEmail(email: string): Promise<any> {
+    console.log('🔐 Intentando login con email:', email);
     
-    // Intercambiar código por tokens
-    return await this.exchangeCodeForTokens(code);
-  }
+    // Validar dominio Amazon
+    if (!AMAZON_EMAIL_REGEX.test(email)) {
+      throw new Error('Solo empleados de Amazon pueden acceder. Usa tu email corporativo (@amazon.com)');
+    }
 
-  // Intercambiar código por tokens
-  private async exchangeCodeForTokens(code: string): Promise<any> {
-    try {
-      const response = await fetch(`${this.config.midwayUrl}/oauth2/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: this.config.clientId,
-          code: code,
-          redirect_uri: this.config.redirectUri,
-        }),
-      });
+    // Verificar autenticación en Midway
+    const midwayAuth = await this.checkMidwayAuth();
+    
+    if (!midwayAuth.isAuthenticated) {
+      throw new Error('Debes estar autenticado en Midway primero. Se abrirá una ventana para autenticarte.');
+    }
 
-      const result = await response.json();
+    // Verificar que el email coincida con el usuario de Midway
+    const emailAlias = email.split('@')[0];
+    if (emailAlias.toLowerCase() !== midwayAuth.username.toLowerCase()) {
+      throw new Error(`El email no coincide con tu usuario de Midway (${midwayAuth.username}). Usa: ${midwayAuth.email}`);
+    }
 
-      if (!response.ok) {
-        throw new Error(result.error_description || 'Error obteniendo tokens');
+    console.log('✅ Login exitoso con Midway');
+    
+    return {
+      user: {
+        email: midwayAuth.email,
+        name: midwayAuth.username,
+        alias: midwayAuth.alias,
+        source: 'midway-direct'
       }
-
-      console.log('🎫 Tokens obtenidos de Midway');
-      
-      // Decodificar información del usuario
-      const userInfo = this.decodeJWT(result.id_token);
-      
-      return {
-        tokens: result,
-        user: {
-          email: userInfo.email,
-          name: userInfo.name || userInfo.preferred_username || userInfo.email?.split('@')[0],
-          alias: userInfo.preferred_username || userInfo.email?.split('@')[0],
-          groups: userInfo.groups || []
-        }
-      };
-    } catch (error) {
-      console.error('❌ Error intercambiando código por tokens:', error);
-      throw error;
-    }
+    };
   }
 
   // Obtener información del usuario actual
   async getCurrentUser(): Promise<any> {
-    const savedSession = localStorage.getItem('midwaySession');
+    const savedSession = localStorage.getItem('midwayDirectSession');
     if (!savedSession) {
       throw new Error('No hay sesión activa');
     }
 
     try {
       const session = JSON.parse(savedSession);
+      const loginTime = new Date(session.loginTime);
+      const now = new Date();
+      const hoursSinceLogin = (now.getTime() - loginTime.getTime()) / (1000 * 60 * 60);
       
-      // Verificar si el token no ha expirado
-      const tokenPayload = this.decodeJWT(session.tokens.id_token);
-      const now = Math.floor(Date.now() / 1000);
-      
-      if (tokenPayload.exp < now) {
-        throw new Error('Token expirado');
+      // Verificar que la sesión no haya expirado (8 horas)
+      if (hoursSinceLogin < 8) {
+        // Verificar que sigue autenticado en Midway
+        const midwayAuth = await this.checkMidwayAuth();
+        if (midwayAuth.isAuthenticated && midwayAuth.username === session.user.alias) {
+          return session.user;
+        }
       }
-
-      return session.user;
+      
+      // Sesión expirada o inválida
+      localStorage.removeItem('midwayDirectSession');
+      throw new Error('Sesión expirada');
     } catch (error) {
-      localStorage.removeItem('midwaySession');
+      localStorage.removeItem('midwayDirectSession');
       throw new Error('Sesión inválida');
     }
   }
 
   // Cerrar sesión
   logout(): void {
-    localStorage.removeItem('midwaySession');
+    localStorage.removeItem('midwayDirectSession');
+    console.log('🚪 Sesión local cerrada');
     
-    // Redirigir a logout de Midway
-    const logoutUrl = `${this.config.midwayUrl}/oauth2/logout?redirect_uri=${encodeURIComponent(this.config.redirectUri)}`;
-    window.location.href = logoutUrl;
+    // Informar al usuario sobre cerrar sesión en Midway
+    alert('Sesión cerrada localmente. Para cerrar completamente, cierra también la sesión en Midway.');
   }
 
-  // Decodificar JWT
-  private decodeJWT(token: string): any {
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map(function(c) {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-          })
-          .join('')
-      );
-      
-      return JSON.parse(jsonPayload);
-    } catch (error) {
-      console.error('Error decodificando JWT:', error);
-      throw new Error('Token JWT inválido');
-    }
-  }
-
-  // Verificar si hay callback de Midway
-  isCallback(): boolean {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.has('code') || urlParams.has('error');
-  }
-
-  // Método para obtener la configuración actual
+  // Obtener configuración
   getConfig() {
     return {
       midwayUrl: this.config.midwayUrl,
-      clientId: this.config.clientId,
-      redirectUri: this.config.redirectUri
+      appName: this.config.appName
     };
   }
 }
 
-const midwayAuthService = new MidwayAuthService();
+const midwayAuthService = new MidwayDirectAuthService();
 
 // Auth Context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -225,6 +214,18 @@ export const useAuth = () => {
 // Utility Functions
 const getPlayerAvatar = (email: string, alias: string): string => {
   return `https://internal-cdn.amazon.com/badgephotos.amazon.com/?fullsizeimage=1&uid=${alias}`;
+};
+
+const validateLoginForm = (email: string): string | null => {
+  if (!email) {
+    return 'Por favor ingresa tu email';
+  }
+  
+  if (!AMAZON_EMAIL_REGEX.test(email)) {
+    return 'Por favor usa tu email corporativo de Amazon (@amazon.com)';
+  }
+  
+  return null;
 };
 
 // Components
@@ -381,43 +382,122 @@ const ClubLogo: React.FC<{
   );
 };
 
-// LoginForm Component - CON MIDWAY
+// LoginForm Component - CON MIDWAY DIRECTO
 const LoginForm: React.FC<{
-  onSubmit: () => Promise<void>;
+  onSubmit: (data: LoginFormData) => Promise<void>;
   isLoading: boolean;
 }> = ({ onSubmit, isLoading }) => {
+  const [formData, setFormData] = useState<LoginFormData>({ email: '' });
+  const [error, setError] = useState<string>('');
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    setError('');
+    
+    try {
+      const validationError = validateLoginForm(formData.email);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+      
+      await onSubmit(formData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error en la autenticación');
+      
+      // Si el error indica que debe autenticarse en Midway, abrir ventana
+      if (err instanceof Error && err.message.includes('Midway primero')) {
+        midwayAuthService.redirectToMidway();
+      }
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({ email: e.target.value });
+    if (error) setError('');
+  };
+
+  const openMidway = () => {
+    midwayAuthService.redirectToMidway();
+  };
+
   return (
-    <div style={{ width: '100%', textAlign: 'center' }}>
+    <form onSubmit={handleSubmit} style={{ width: '100%' }}>
+      {error && (
+        <div style={{
+          background: 'rgba(255, 107, 107, 0.2)',
+          border: '1px solid rgba(255, 107, 107, 0.5)',
+          borderRadius: '8px',
+          padding: '12px',
+          marginBottom: '20px',
+          color: '#FF6B6B',
+          fontSize: '0.9rem',
+          textAlign: 'center'
+        }}>
+          ❌ {error}
+        </div>
+      )}
+      
       <div style={{
         background: 'rgba(0, 245, 160, 0.1)',
         border: '1px solid rgba(0, 245, 160, 0.3)',
         borderRadius: '12px',
-        padding: '20px',
-        marginBottom: '20px'
+        padding: '15px',
+        marginBottom: '20px',
+        textAlign: 'center'
       }}>
-        <h3 style={{ color: '#00F5A0', margin: '0 0 10px 0' }}>
-          🔐 Autenticación con Midway
-        </h3>
-        <p style={{ color: 'rgba(255, 255, 255, 0.8)', margin: 0, fontSize: '0.9rem' }}>
-          Usa tu cuenta corporativa de Amazon para acceder
+        <p style={{ color: '#00F5A0', fontSize: '0.9rem', margin: '0 0 10px 0', fontWeight: 'bold' }}>
+          🔒 Autenticación con Midway
+        </p>
+        <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '0.8rem', margin: 0 }}>
+          Primero debes estar autenticado en Midway
         </p>
       </div>
 
-      <button 
-        onClick={onSubmit} 
-        disabled={isLoading} 
-        className="btn"
-        style={{ width: '100%', padding: '15px' }}
-      >
+      <div style={{ marginBottom: '15px' }}>
+        <button 
+          type="button"
+          onClick={openMidway}
+          style={{
+            width: '100%',
+            padding: '12px',
+            background: 'rgba(0, 217, 245, 0.2)',
+            border: '1px solid rgba(0, 217, 245, 0.5)',
+            borderRadius: '8px',
+            color: '#00D9F5',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            marginBottom: '15px'
+          }}
+        >
+          🌐 Abrir Midway Authentication
+        </p>
+      </div>
+
+      <div className="input-group">
+        <label htmlFor="email">Tu email corporativo:</label>
+        <input 
+          type="email" 
+          id="email" 
+          value={formData.email}
+          onChange={handleInputChange}
+          placeholder="sancpjor@amazon.com" 
+          required 
+          disabled={isLoading}
+        />
+        <p style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '5px' }}>
+          💡 Debe coincidir con tu usuario de Midway
+        </p>
+      </div>
+      
+      <button type="submit" disabled={isLoading} className="btn">
         {isLoading ? (
           <>
             <LoadingSpinner size="small" />
-            Redirigiendo a Midway...
+            Verificando con Midway...
           </>
         ) : (
-          <>
-            🚀 Iniciar Sesión con Midway
-          </>
+          '✅ Iniciar Sesión'
         )}
       </button>
 
@@ -434,16 +514,16 @@ const LoginForm: React.FC<{
           margin: '0 0 10px 0',
           fontWeight: 'bold'
         }}>
-          ℹ️ Sobre Midway
+          ℹ️ Cómo funciona
         </p>
         <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-          <p style={{ margin: '5px 0' }}>✅ Sistema de autenticación interno de Amazon</p>
-          <p style={{ margin: '5px 0' }}>✅ Acceso seguro con tu cuenta corporativa</p>
-          <p style={{ margin: '5px 0' }}>✅ No necesitas crear nueva cuenta</p>
-          <p style={{ margin: '5px 0' }}>🌐 URL: {midwayAuthService.getConfig().midwayUrl}</p>
+          <p style={{ margin: '5px 0' }}>1. Haz clic en "Abrir Midway Authentication"</p>
+          <p style={{ margin: '5px 0' }}>2. Auténticate en Midway si no lo has hecho</p>
+          <p style={{ margin: '5px 0' }}>3. Vuelve aquí e ingresa tu email</p>
+          <p style={{ margin: '5px 0' }}>4. El sistema verificará tu autenticación</p>
         </div>
       </div>
-    </div>
+    </form>
   );
 };
 
@@ -480,7 +560,7 @@ const Modal: React.FC<{
   );
 };
 
-// AuthProvider con Midway
+// AuthProvider con Midway Directo
 const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [userName, setUserName] = useState<string>('');
@@ -491,67 +571,58 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const authService = midwayAuthService;
 
   useEffect(() => {
-    handleInitialAuth();
+    checkExistingSession();
     
     // Mostrar información de desarrollo
     if (process.env.NODE_ENV === 'development') {
       console.log('🎮 ZAZ Football Quiz - Modo de desarrollo');
-      console.log('🔐 Usando Midway Authentication');
+      console.log('🔐 Usando Midway Direct Authentication');
       console.log('🌐 Midway URL:', authService.getConfig().midwayUrl);
-      console.log('🆔 Client ID:', authService.getConfig().clientId);
-      console.log('🔄 Redirect URI:', authService.getConfig().redirectUri);
+      console.log('📱 App:', authService.getConfig().appName);
     }
   }, []);
 
-  const handleInitialAuth = async () => {
-    setIsLoading(true);
-    
+  const checkExistingSession = async () => {
     try {
-      // Verificar si es un callback de Midway
-      if (authService.isCallback()) {
-        console.log('🔄 Procesando callback de Midway...');
-        const result = await authService.handleMidwayCallback();
-        
-        // Guardar sesión
-        const sessionData = {
-          user: result.user,
-          tokens: result.tokens,
-          loginTime: new Date().toISOString()
-        };
-        localStorage.setItem('midwaySession', JSON.stringify(sessionData));
-        
-        // Actualizar estado
-        setIsLoggedIn(true);
-        setUserEmail(result.user.email);
-        setUserName(result.user.name);
-        setUserAlias(result.user.alias);
-        
-        // Limpiar URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-        
-        console.log('✅ Login completado con Midway');
-      } else {
-        // Verificar sesión existente
-        try {
-          const user = await authService.getCurrentUser();
-          setIsLoggedIn(true);
-          setUserEmail(user.email);
-          setUserName(user.name);
-          setUserAlias(user.alias);
-          console.log('✅ Sesión restaurada:', user.email);
-        } catch (error) {
-          console.log('ℹ️ No hay sesión activa');
-        }
-      }
+      const user = await authService.getCurrentUser();
+      setIsLoggedIn(true);
+      setUserEmail(user.email);
+      setUserName(user.name);
+      setUserAlias(user.alias);
+      console.log('✅ Sesión restaurada:', user.email);
     } catch (error) {
-      console.error('❌ Error en autenticación:', error);
-    } finally {
-      setIsLoading(false);
+      console.log('ℹ️ No hay sesión activa');
     }
   };
 
-  const login = async (): Promise<void> => {
-    authService.redirectToMidway();
+  const login = async (email: string): Promise<void> => {
+    if (!email) {
+      throw new Error('Email es requerido');
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      const result = await authService.loginWithEmail(email);
+      
+      setIsLoggedIn(true);
+      setUserEmail(result.user.email);
+      setUserName(result.user.name);
+      setUserAlias(result.user.alias);
+      
+      const sessionData = {
+        user: result.user,
+        loginTime: new Date().toISOString()
+      };
+      localStorage.setItem('midwayDirectSession', JSON.stringify(sessionData));
+      
+      console.log('✅ Login completado y sesión guardada');
+    } catch (error) {
+      console.error('❌ Error en login:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const logout = (): void => {
@@ -568,7 +639,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       userName, 
       userEmail, 
       userAlias, 
-      login,
+      login: (email: string) => login(email),
       logout, 
       isLoading 
     }}>
@@ -617,8 +688,8 @@ const HomePage: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadRankingData]);
 
-  const handleLogin = async (): Promise<void> => {
-    await login();
+  const handleLogin = async (formData: LoginFormData): Promise<void> => {
+    await login(formData.email);
     setShowLoginModal(false);
     setTimeout(loadRankingData, 1000);
   };
@@ -722,7 +793,7 @@ const HomePage: React.FC = () => {
       <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)}>
         <div className="login-container">
           <h2>🔐 Acceso Amazon</h2>
-          <p>Inicia sesión con tu cuenta corporativa</p>
+          <p>Inicia sesión con tu cuenta de Midway</p>
           <LoginForm 
             onSubmit={handleLogin} 
             isLoading={authLoading} 
@@ -730,7 +801,7 @@ const HomePage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Sección de clubes con imágenes reales */}
+      {/* Resto del componente igual... */}
       <section className="clubs-section">
         <div className="club-card zaragoza">
           <ClubLogo
@@ -742,7 +813,6 @@ const HomePage: React.FC = () => {
           <h3 style={{ color: '#00F5A0' }}>Real Zaragoza</h3>
           <p>Test your knowledge about the team</p>
           
-          {/* Sponsor logo */}
           <div style={{ marginTop: '20px' }}>
             <img 
               src={SponsorZaragozaLogo} 
@@ -767,7 +837,6 @@ const HomePage: React.FC = () => {
           <h3 style={{ color: '#FFD700' }}>SD Huesca</h3>
           <p>Learn about the local rival</p>
           
-          {/* Sponsor logo */}
           <div style={{ marginTop: '20px' }}>
             <img 
               src={SponsorHuescaLogo} 
@@ -805,7 +874,6 @@ const HomePage: React.FC = () => {
           </div>
         </div>
 
-        {/* CTA Section */}
         <div className="cta-section">
           {isLoggedIn ? (
             <Link to="/quiz" className="btn-link">
@@ -823,7 +891,6 @@ const HomePage: React.FC = () => {
           </p>
         </div>
 
-        {/* Quiz Statistics */}
         <div className="stats-section">
           <h2>📊 Quiz Statistics</h2>
           <div className="competition-info">
@@ -846,7 +913,6 @@ const HomePage: React.FC = () => {
           </div>
         </div>
 
-        {/* Ranking Section */}
         <section className="ranking-section">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
             <h2>🏆 Ranking - Top Players</h2>
@@ -978,7 +1044,6 @@ const HomePage: React.FC = () => {
         </section>
       </main>
 
-      {/* Rules Section */}
       <section className="rules-section">
         <h2>📋 Quiz Rules</h2>
         <ul className="rules-list">
@@ -995,7 +1060,6 @@ const HomePage: React.FC = () => {
       </section>
 
       <footer className="footer">
-        {/* Logos en el footer con imágenes reales */}
         <div style={{ 
           display: 'flex', 
           justifyContent: 'center', 
