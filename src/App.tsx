@@ -3,6 +3,15 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-ro
 import Quiz from './components/Quiz';
 import { getLeaderboard, getStats } from './services/quizAPI';
 
+// Rutas de imágenes reales
+const AWSLogo = '/images/Amazon_Web_Services_Logo.svg.png';
+const RealZaragozaLogo = '/images/RealZaragoza.png';
+const SDHuescaLogo = '/images/SDHuesca.png';
+const ZAZClusterLogo = '/images/ZAZCluster.png';
+const BackgroundImage = '/images/background.png';
+const SponsorHuescaLogo = '/images/sponsorhuesca.png';
+const SponsorZaragozaLogo = '/images/sponsorzaragoza.png';
+
 // Types
 interface AuthContextType {
   isLoggedIn: boolean;
@@ -42,7 +51,7 @@ interface LoginFormData {
 // Constants
 const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
 const SESSION_STORAGE_KEY = 'quizSession';
-const LEADERBOARD_REFRESH_INTERVAL = 30000; // 30 seconds
+const LEADERBOARD_REFRESH_INTERVAL = 30000;
 
 // Auth Context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -176,6 +185,64 @@ const FastAvatar: React.FC<{
   );
 };
 
+const ClubLogo: React.FC<{
+  src: string;
+  alt: string;
+  fallbackColor: string;
+  clubName: string;
+}> = ({ src, alt, fallbackColor, clubName }) => {
+  const [imageError, setImageError] = useState(false);
+
+  if (imageError) {
+    return (
+      <div style={{
+        width: '100px',
+        height: '100px',
+        background: fallbackColor,
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        margin: '0 auto 20px auto',
+        fontSize: '2rem',
+        fontWeight: 'bold',
+        color: '#1a1a1a',
+        border: `4px solid ${fallbackColor}`,
+        boxShadow: `0 8px 25px ${fallbackColor}40`
+      }}>
+        {clubName.substring(0, 2)}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      width: '100px',
+      height: '100px',
+      margin: '0 auto 20px auto',
+      borderRadius: '50%',
+      overflow: 'hidden',
+      border: `4px solid ${fallbackColor}`,
+      background: 'white',
+      padding: '8px',
+      boxShadow: `0 8px 25px ${fallbackColor}40`,
+      transition: 'all 0.3s ease'
+    }}>
+      <img 
+        src={src}
+        alt={alt}
+        style={{ 
+          width: '100%', 
+          height: '100%', 
+          objectFit: 'contain',
+          borderRadius: '50%'
+        }}
+        onError={() => setImageError(true)}
+      />
+    </div>
+  );
+};
+
 const LoginForm: React.FC<{
   onSubmit: (data: LoginFormData) => Promise<void>;
   isLoading: boolean;
@@ -224,15 +291,8 @@ const LoginForm: React.FC<{
         </div>
       )}
       
-      <div className="input-group" style={{ marginBottom: '20px' }}>
-        <label htmlFor="email" style={{ 
-          display: 'block', 
-          marginBottom: '8px', 
-          color: '#00F5A0',
-          fontWeight: '500'
-        }}>
-          Email corporativo:
-        </label>
+      <div className="input-group">
+        <label htmlFor="email">Email corporativo:</label>
         <input 
           type="email" 
           id="email" 
@@ -241,29 +301,11 @@ const LoginForm: React.FC<{
           placeholder="tu-usuario@amazon.com" 
           required 
           disabled={isLoading}
-          style={{
-            width: '100%',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            background: 'rgba(255, 255, 255, 0.1)',
-            color: 'white',
-            fontSize: '1rem',
-            transition: 'all 0.3s ease',
-            opacity: isLoading ? 0.6 : 1
-          }}
         />
       </div>
       
-      <div className="input-group" style={{ marginBottom: '25px' }}>
-        <label htmlFor="password" style={{ 
-          display: 'block', 
-          marginBottom: '8px', 
-          color: '#00F5A0',
-          fontWeight: '500'
-        }}>
-          Contraseña:
-        </label>
+      <div className="input-group">
+        <label htmlFor="password">Contraseña:</label>
         <input 
           type="password" 
           id="password" 
@@ -272,42 +314,10 @@ const LoginForm: React.FC<{
           placeholder="••••••••" 
           required 
           disabled={isLoading}
-          style={{
-            width: '100%',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            background: 'rgba(255, 255, 255, 0.1)',
-            color: 'white',
-            fontSize: '1rem',
-            transition: 'all 0.3s ease',
-            opacity: isLoading ? 0.6 : 1
-          }}
         />
       </div>
       
-      <button 
-        type="submit" 
-        disabled={isLoading}
-        style={{
-          width: '100%',
-          padding: '15px',
-          borderRadius: '10px',
-          border: 'none',
-          background: isLoading 
-            ? 'rgba(102, 126, 234, 0.5)' 
-            : 'linear-gradient(45deg, #00F5A0, #00D9F5)',
-          color: isLoading ? 'rgba(255, 255, 255, 0.7)' : '#1a1a1a',
-          fontSize: '1.1rem',
-          fontWeight: '600',
-          cursor: isLoading ? 'not-allowed' : 'pointer',
-          transition: 'all 0.3s ease',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '10px'
-        }}
-      >
+      <button type="submit" disabled={isLoading} className="btn">
         {isLoading ? (
           <>
             <LoadingSpinner size="small" />
@@ -345,69 +355,9 @@ const Modal: React.FC<{
   if (!isOpen) return null;
 
   return (
-    <div 
-      className="modal" 
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        backdropFilter: 'blur(5px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        animation: 'fadeIn 0.3s ease-out'
-      }}
-    >
-      <div 
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(40, 40, 40, 0.95))',
-          padding: '30px',
-          borderRadius: '20px',
-          width: '90%',
-          maxWidth: '400px',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
-          animation: 'slideIn 0.3s ease-out',
-          position: 'relative'
-        }}
-      >
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute',
-            top: '15px',
-            right: '20px',
-            background: 'none',
-            border: 'none',
-            color: 'rgba(255, 255, 255, 0.7)',
-            fontSize: '24px',
-            cursor: 'pointer',
-            padding: '5px',
-            borderRadius: '50%',
-            width: '35px',
-            height: '35px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.3s ease'
-          }}
-          onMouseOver={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-            e.currentTarget.style.color = 'white';
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.background = 'none';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
-          }}
-        >
-          ×
-        </button>
+    <div className="modal" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <span className="close" onClick={onClose}>&times;</span>
         {children}
       </div>
     </div>
@@ -489,15 +439,9 @@ const HomePage: React.FC = () => {
         <div className="auth-section">
           {isLoggedIn ? (
             <div className="user-info-header">
-              <FastAvatar
-                email={userEmail}
-                alias={userName}
-                size={35}
-              />
+              <FastAvatar email={userEmail} alias={userName} size={35} />
               <span>👋 Hola, {userName}</span>
-              <button onClick={logout} className="btn-secondary">
-                Cerrar Sesión
-              </button>
+              <button onClick={logout} className="btn-secondary">Cerrar Sesión</button>
             </div>
           ) : (
             <button 
@@ -510,8 +454,52 @@ const HomePage: React.FC = () => {
           )}
         </div>
         
-        {/* Logo AWS mejorado */}
-        <div className="aws-header-logo"></div>
+        {/* Logos principales con imágenes reales */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          gap: '30px',
+          marginBottom: '30px',
+          flexWrap: 'wrap'
+        }}>
+          <img 
+            src={AWSLogo} 
+            alt="AWS Logo" 
+            style={{ 
+              height: '70px', 
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.3))',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.filter = 'drop-shadow(0 6px 16px rgba(255,153,0,0.4))';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.filter = 'drop-shadow(0 4px 12px rgba(0,0,0,0.3))';
+            }}
+          />
+          <img 
+            src={ZAZClusterLogo} 
+            alt="ZAZ Cluster" 
+            style={{ 
+              height: '90px', 
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.3))',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.filter = 'drop-shadow(0 6px 16px rgba(0,245,160,0.4))';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.filter = 'drop-shadow(0 4px 12px rgba(0,0,0,0.3))';
+            }}
+          />
+        </div>
         
         <h1>🏆 ZAZ Football Quiz</h1>
         <p>Test your knowledge about Real Zaragoza and AWS!</p>
@@ -519,61 +507,85 @@ const HomePage: React.FC = () => {
 
       {/* Login Modal */}
       <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)}>
-        <div style={{ textAlign: 'center', marginBottom: '25px' }}>
-          <h2 style={{ color: '#00F5A0', marginBottom: '10px', fontSize: '1.8rem' }}>
-            🔐 Iniciar Sesión
-          </h2>
-          <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '1rem' }}>
-            Inicia sesión para participar en el quiz
-          </p>
-        </div>
-        
-        <LoginForm onSubmit={handleLogin} isLoading={authLoading} />
-        
-        <div style={{ 
-          textAlign: 'center', 
-          marginTop: '20px',
-          padding: '15px',
-          background: 'rgba(255, 255, 255, 0.05)',
-          borderRadius: '8px'
-        }}>
-          <p style={{ 
-            fontSize: '0.85rem', 
-            color: 'rgba(255, 255, 255, 0.6)',
-            margin: 0
-          }}>
-            ¿Problemas para acceder? Contacta IT Support
-          </p>
+        <div className="login-container">
+          <h2>🔐 Iniciar Sesión</h2>
+          <p>Inicia sesión para participar en el quiz</p>
+          <LoginForm onSubmit={handleLogin} isLoading={authLoading} />
+          <div className="login-help">
+            <small>¿Problemas para acceder? Contacta IT Support</small>
+          </div>
         </div>
       </Modal>
 
-      {/* Sección de clubes con logos CSS */}
+      {/* Sección de clubes con imágenes reales */}
       <section className="clubs-section">
-        <div className="club-card">
-          <div className="logo-zaragoza"></div>
-          <h3>Real Zaragoza</h3>
+        <div className="club-card zaragoza">
+          <ClubLogo
+            src={RealZaragozaLogo}
+            alt="Real Zaragoza"
+            fallbackColor="#0066cc"
+            clubName="Real Zaragoza"
+          />
+          <h3 style={{ color: '#00F5A0' }}>Real Zaragoza</h3>
           <p>Test your knowledge about the team</p>
+          
+          {/* Sponsor logo */}
+          <div style={{ marginTop: '20px' }}>
+            <img 
+              src={SponsorZaragozaLogo} 
+              alt="Sponsor Zaragoza" 
+              style={{ 
+                height: '35px', 
+                objectFit: 'contain',
+                opacity: 0.9,
+                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
+              }}
+            />
+          </div>
         </div>
         
-        <div className="club-card">
-          <div className="logo-huesca"></div>
-          <h3>SD Huesca</h3>
+        <div className="club-card huesca">
+          <ClubLogo
+            src={SDHuescaLogo}
+            alt="SD Huesca"
+            fallbackColor="#cc0000"
+            clubName="SD Huesca"
+          />
+          <h3 style={{ color: '#FFD700' }}>SD Huesca</h3>
           <p>Learn about the local rival</p>
+          
+          {/* Sponsor logo */}
+          <div style={{ marginTop: '20px' }}>
+            <img 
+              src={SponsorHuescaLogo} 
+              alt="Sponsor Huesca" 
+              style={{ 
+                height: '35px', 
+                objectFit: 'contain',
+                opacity: 0.9,
+                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
+              }}
+            />
+          </div>
         </div>
       </section>
 
       <main className="main-content">
         <div className="competition-status">
           <h2>🎯 Quiz Challenge</h2>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-            gap: '15px',
-            marginBottom: '20px'
-          }}>
-            <p><strong>Categories:</strong> Real Zaragoza, SD Huesca, AWS, Football World Cup, Aragon</p>
-            <p><strong>Questions:</strong> 5 random questions per game</p>
-            <p><strong>Time limit:</strong> 10 seconds per question</p>
+          <div className="competition-info">
+            <div className="info-card">
+              <h3>📚 Categories</h3>
+              <p><strong>Topics:</strong> Real Zaragoza, SD Huesca, AWS, Football World Cup, Aragon</p>
+            </div>
+            <div className="info-card">
+              <h3>❓ Questions</h3>
+              <p><strong>Format:</strong> 5 random questions per game</p>
+            </div>
+            <div className="info-card">
+              <h3>⏱️ Time Limit</h3>
+              <p><strong>Duration:</strong> 10 seconds per question</p>
+            </div>
           </div>
           <div className="countdown">
             {isLoggedIn ? '🎮 Ready to test your knowledge?' : '🔐 Please log in to play the quiz'}
@@ -583,22 +595,14 @@ const HomePage: React.FC = () => {
         {/* CTA Section */}
         <div className="cta-section">
           {isLoggedIn ? (
-            <Link to="/quiz" style={{ textDecoration: 'none' }}>
-              <button className="btn">
-                🎮 Play Quiz Now
-              </button>
+            <Link to="/quiz" className="btn-link">
+              <button className="btn">🎮 Play Quiz Now</button>
             </Link>
           ) : (
-            <button onClick={handleQuizClick} className="btn">
-              🔐 Login to Play Quiz
-            </button>
+            <button onClick={handleQuizClick} className="btn">🔐 Login to Play Quiz</button>
           )}
           
-          <p style={{ 
-            marginTop: '20px', 
-            color: 'rgba(255, 255, 255, 0.7)', 
-            fontSize: '1.1rem' 
-          }}>
+          <p>
             {isLoggedIn 
               ? '✨ Challenge yourself with questions about football, AWS, and Aragon!' 
               : '🔐 Please log in to access the quiz'
@@ -609,74 +613,32 @@ const HomePage: React.FC = () => {
         {/* Quiz Statistics */}
         <div className="stats-section">
           <h2>📊 Quiz Statistics</h2>
-          
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-            gap: '15px',
-            marginBottom: '20px'
-          }}>
-            {[
-              { value: stats.totalUsers, label: 'Total Users', color: '#00F5A0' },
-              { value: stats.playedUsers, label: 'Played', color: '#00D9F5' },
-              { value: stats.averageScore.toFixed(1), label: 'Avg Score', color: '#FFD700' },
-              { value: stats.perfectScores, label: 'Perfect Scores', color: '#FF6B6B' }
-            ].map((stat, index) => (
-              <div key={index} style={{
-                background: `rgba(${stat.color === '#00F5A0' ? '0, 245, 160' : 
-                                   stat.color === '#00D9F5' ? '0, 217, 245' : 
-                                   stat.color === '#FFD700' ? '255, 215, 0' : '255, 107, 107'}, 0.2)`,
-                padding: '15px',
-                borderRadius: '10px',
-                textAlign: 'center',
-                border: `1px solid rgba(${stat.color === '#00F5A0' ? '0, 245, 160' : 
-                                           stat.color === '#00D9F5' ? '0, 217, 245' : 
-                                           stat.color === '#FFD700' ? '255, 215, 0' : '255, 107, 107'}, 0.3)`
-              }}>
-                <div style={{ 
-                  fontSize: '1.5rem', 
-                  fontWeight: 'bold', 
-                  color: stat.color 
-                }}>
-                  {stat.value}
-                </div>
-                <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>
-                  {stat.label}
-                </div>
-              </div>
-            ))}
+          <div className="competition-info">
+            <div className="info-card">
+              <h3>👥 Total Users</h3>
+              <p><strong>{stats.totalUsers}</strong></p>
+            </div>
+            <div className="info-card">
+              <h3>🎮 Players</h3>
+              <p><strong>{stats.playedUsers}</strong></p>
+            </div>
+            <div className="info-card">
+              <h3>📈 Average Score</h3>
+              <p><strong>{stats.averageScore.toFixed(1)}</strong></p>
+            </div>
+            <div className="info-card">
+              <h3>🏆 Perfect Scores</h3>
+              <p><strong>{stats.perfectScores}</strong></p>
+            </div>
           </div>
         </div>
 
         {/* Ranking Section */}
         <section className="ranking-section">
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '25px'
-          }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
             <h2>🏆 Ranking - Top Players</h2>
-            <button
-              onClick={loadRankingData}
-              disabled={isLoadingRanking}
-              style={{
-                background: 'rgba(255, 255, 255, 0.2)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                borderRadius: '8px',
-                padding: '8px 15px',
-                color: 'white',
-                cursor: isLoadingRanking ? 'not-allowed' : 'pointer',
-                fontSize: '0.9rem',
-                transition: 'all 0.3s ease',
-                opacity: isLoadingRanking ? 0.6 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              {isLoadingRanking ? <LoadingSpinner size="small" /> : '🔄'} 
-              Refresh
+            <button onClick={loadRankingData} disabled={isLoadingRanking} className="btn-secondary">
+              {isLoadingRanking ? <LoadingSpinner size="small" /> : '🔄'} Refresh
             </button>
           </div>
 
@@ -686,11 +648,7 @@ const HomePage: React.FC = () => {
               <p style={{ marginTop: '15px' }}>Loading ranking...</p>
             </div>
           ) : leaderboard.length === 0 ? (
-            <div style={{
-              textAlign: 'center',
-              padding: '40px',
-              color: 'rgba(255, 255, 255, 0.7)'
-            }}>
+            <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255, 255, 255, 0.7)' }}>
               <p style={{ fontSize: '1.2rem', marginBottom: '10px' }}>🎯 No scores yet!</p>
               <p>Be the first to play and set a record!</p>
             </div>
@@ -701,35 +659,28 @@ const HomePage: React.FC = () => {
                 const isCurrentUser = isLoggedIn && entry.email === userEmail;
                 
                 return (
-                  <div
-                    key={entry.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '15px 20px',
-                      margin: '8px 0',
-                      background: isCurrentUser 
-                        ? 'rgba(0, 245, 160, 0.2)' 
-                        : position <= 3 
-                          ? 'rgba(255, 215, 0, 0.15)' 
-                          : 'rgba(255, 255, 255, 0.05)',
-                      borderRadius: '12px',
-                      border: isCurrentUser 
-                        ? '2px solid rgba(0, 245, 160, 0.5)' 
-                        : position <= 3 
-                          ? '1px solid rgba(255, 215, 0, 0.3)' 
-                          : '1px solid rgba(255, 255, 255, 0.1)',
-                      transition: 'all 0.3s ease',
-                      transform: isCurrentUser ? 'scale(1.02)' : 'scale(1)'
-                    }}
-                  >
+                  <div key={entry.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '15px 20px',
+                    margin: '8px 0',
+                    background: isCurrentUser 
+                      ? 'rgba(0, 245, 160, 0.2)' 
+                      : position <= 3 
+                        ? 'rgba(255, 215, 0, 0.15)' 
+                        : 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '12px',
+                    border: isCurrentUser 
+                      ? '2px solid rgba(0, 245, 160, 0.5)' 
+                      : position <= 3 
+                        ? '1px solid rgba(255, 215, 0, 0.3)' 
+                        : '1px solid rgba(255, 255, 255, 0.1)',
+                    transition: 'all 0.3s ease',
+                    transform: isCurrentUser ? 'scale(1.02)' : 'scale(1)'
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      <div style={{
-                        fontSize: '1.5rem',
-                        minWidth: '40px',
-                        textAlign: 'center'
-                      }}>
+                      <div style={{ fontSize: '1.5rem', minWidth: '40px', textAlign: 'center' }}>
                         {getRankingIcon(position)}
                       </div>
                       
@@ -760,10 +711,7 @@ const HomePage: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        <div style={{
-                          fontSize: '0.85rem',
-                          color: 'rgba(255, 255, 255, 0.7)'
-                        }}>
+                        <div style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.7)' }}>
                           {entry.date} at {entry.time}
                         </div>
                       </div>
@@ -820,41 +768,87 @@ const HomePage: React.FC = () => {
       {/* Rules Section */}
       <section className="rules-section">
         <h2>📋 Quiz Rules</h2>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '10px'
-        }}>
-          {[
-            '🔐 You must be logged in to play the quiz',
-            '🎲 5 random questions will be selected from different categories',
-            '⏱️ You have 10 seconds to answer each question',
-            '🚫 You cannot go back to previous questions',
-            '⚠️ You can only attempt the quiz once',
-            '🏆 Each correct answer gives you 1 point',
-            '📊 Your final score will be displayed at the end',
-            '🎯 Categories include: Real Zaragoza, SD Huesca, AWS, World Cup, and Aragon',
-            '🏅 Your score will appear in the ranking if you\'re in the top 10'
-          ].map((rule, index) => (
-            <div key={index} style={{
-              padding: '10px 15px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              fontSize: '0.95rem',
-              color: 'rgba(255, 255, 255, 0.9)'
-            }}>
-              {rule}
-            </div>
-          ))}
-        </div>
+        <ul className="rules-list">
+          <li>🔐 You must be logged in to play the quiz</li>
+          <li>🎲 5 random questions will be selected from different categories</li>
+          <li>⏱️ You have 10 seconds to answer each question</li>
+          <li>🚫 You cannot go back to previous questions</li>
+          <li>⚠️ You can only attempt the quiz once</li>
+          <li>🏆 Each correct answer gives you 1 point</li>
+          <li>📊 Your final score will be displayed at the end</li>
+          <li>🎯 Categories include: Real Zaragoza, SD Huesca, AWS, World Cup, and Aragon</li>
+          <li>🏅 Your score will appear in the ranking if you\'re in the top 10</li>
+        </ul>
       </section>
 
       <footer className="footer">
+        {/* Logos en el footer con imágenes reales */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          gap: '40px',
+          marginBottom: '25px',
+          flexWrap: 'wrap'
+        }}>
+          <img 
+            src={AWSLogo} 
+            alt="AWS" 
+            style={{ 
+              height: '45px', 
+              objectFit: 'contain', 
+              opacity: 0.8,
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.opacity = '1';
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.opacity = '0.8';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          />
+          <img 
+            src={RealZaragozaLogo} 
+            alt="Real Zaragoza" 
+            style={{ 
+              height: '45px', 
+              objectFit: 'contain', 
+              opacity: 0.8,
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.opacity = '1';
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.opacity = '0.8';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          />
+          <img 
+            src={SDHuescaLogo} 
+            alt="SD Huesca" 
+            style={{ 
+              height: '45px', 
+              objectFit: 'contain', 
+              opacity: 0.8,
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.opacity = '1';
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.opacity = '0.8';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          />
+        </div>
+        
         <p>© 2025 ZAZ Football Quiz | Test your knowledge about football, AWS, and Aragon</p>
-        <p style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.6)' }}>
-          Developed for football and tech enthusiasts
-        </p>
+        <p>Developed for football and tech enthusiasts</p>
       </footer>
     </div>
   );
@@ -868,7 +862,6 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const [userAlias, setUserAlias] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Load session on mount
   useEffect(() => {
     const savedSession = localStorage.getItem(SESSION_STORAGE_KEY);
     if (savedSession) {
@@ -878,7 +871,6 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         const now = new Date();
         const hoursSinceLogin = (now.getTime() - loginTime.getTime()) / (1000 * 60 * 60);
         
-        // Session expires after 24 hours
         if (hoursSinceLogin < 24) {
           setIsLoggedIn(true);
           setUserName(session.userName);
@@ -898,11 +890,8 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     setIsLoading(true);
     
     try {
-      // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Here you would normally make an API call to authenticate
-      // For now, we'll just validate the format
       const validationError = validateLoginForm(email, password);
       if (validationError) {
         throw new Error(validationError);
@@ -916,7 +905,6 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       setUserAlias(alias);
       setIsLoggedIn(true);
       
-      // Save session
       const sessionData = {
         userName,
         userEmail: email,
@@ -955,7 +943,6 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   );
 };
 
-// Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isLoggedIn } = useAuth();
   
@@ -970,7 +957,15 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <Router>
-        <div className="App">
+        <div 
+          className="App"
+          style={{
+            backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url(${BackgroundImage})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundAttachment: 'fixed'
+          }}
+        >
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route 
@@ -987,51 +982,5 @@ const App: React.FC = () => {
     </AuthProvider>
   );
 };
-
-// Add CSS animations
-const styles = `
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-50px) scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.club-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-}
-
-.btn:hover {
-  transform: translateY(-2px);
-}
-
-input:focus {
-  outline: none;
-  border-color: #00F5A0 !important;
-  box-shadow: 0 0 0 2px rgba(0, 245, 160, 0.2);
-}
-`;
-
-// Inject styles
-if (typeof document !== 'undefined') {
-  const styleSheet = document.createElement('style');
-  styleSheet.textContent = styles;
-  document.head.appendChild(styleSheet);
-}
 
 export default App;
