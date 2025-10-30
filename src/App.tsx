@@ -59,7 +59,7 @@ const LEADERBOARD_REFRESH_INTERVAL = 30000;
 class CognitoAuthService {
   private config = {
     userPoolId: 'eu-west-3_lHUi9pWBS',
-    clientId: '5ih9lsr8cv6gpvtblpar1sndf3',
+    clientId: '2626c6f8tuqtosyzp6vt', // ← Actualizado
     region: 'eu-west-3'
   };
 
