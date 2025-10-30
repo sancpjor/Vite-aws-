@@ -1,9 +1,10 @@
+// App.tsx - SIN dependencias adicionales
 import React, { useState, createContext, useContext, useEffect, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Quiz from './components/Quiz';
 import { getLeaderboard, getStats } from './services/quizAPI';
 
-// Rutas de imágenes reales
+// Rutas de imágenes
 const AWSLogo = '/images/Amazon_Web_Services_Logo.svg.png';
 const RealZaragozaLogo = '/images/RealZaragoza.png';
 const SDHuescaLogo = '/images/SDHuesca.png';
@@ -19,6 +20,7 @@ interface AuthContextType {
   userEmail: string;
   userAlias: string;
   login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, username: string) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -50,8 +52,111 @@ interface LoginFormData {
 
 // Constants
 const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
-const SESSION_STORAGE_KEY = 'quizSession';
 const LEADERBOARD_REFRESH_INTERVAL = 30000;
+
+// Configuración de Cognito (obtener de amplify_outputs.json)
+const getCognitoConfig = () => {
+  try {
+    // Intentar cargar la configuración de Amplify
+    const outputs = require('./amplify_outputs.json');
+    return {
+      userPoolId: outputs.auth?.user_pool_id,
+      clientId: outputs.auth?.user_pool_client_id,
+      region: outputs.auth?.aws_region || 'us-east-1',
+    };
+  } catch (error) {
+    console.warn('No se pudo cargar amplify_outputs.json, usando configuración por defecto');
+    return {
+      userPoolId: process.env.REACT_APP_USER_POOL_ID,
+      clientId: process.env.REACT_APP_USER_POOL_CLIENT_ID,
+      region: process.env.REACT_APP_AWS_REGION || 'us-east-1',
+    };
+  }
+};
+
+// Servicio de autenticación usando fetch directo
+class CognitoAuthService {
+  private config = getCognitoConfig();
+
+  async signIn(email: string, password: string): Promise<any> {
+    const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
+      },
+      body: JSON.stringify({
+        ClientId: this.config.clientId,
+        AuthFlow: 'USER_PASSWORD_AUTH',
+        AuthParameters: {
+          USERNAME: email,
+          PASSWORD: password,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Error al iniciar sesión');
+    }
+
+    return response.json();
+  }
+
+  async signUp(email: string, password: string, username: string): Promise<any> {
+    const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.SignUp',
+      },
+      body: JSON.stringify({
+        ClientId: this.config.clientId,
+        Username: email,
+        Password: password,
+        UserAttributes: [
+          {
+            Name: 'email',
+            Value: email,
+          },
+          {
+            Name: 'preferred_username',
+            Value: username,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Error al registrarse');
+    }
+
+    return response.json();
+  }
+
+  async confirmSignUp(email: string, code: string): Promise<any> {
+    const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.ConfirmSignUp',
+      },
+      body: JSON.stringify({
+        ClientId: this.config.clientId,
+        Username: email,
+        ConfirmationCode: code,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Error al confirmar registro');
+    }
+
+    return response.json();
+  }
+}
 
 // Auth Context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -82,8 +187,8 @@ const validateLoginForm = (email: string, password: string): string | null => {
     return 'Por favor usa tu email corporativo de Amazon (@amazon.com)';
   }
   
-  if (password.length < 6) {
-    return 'La contraseña debe tener al menos 6 caracteres';
+  if (password.length < 8) {
+    return 'La contraseña debe tener al menos 8 caracteres';
   }
   
   return null;
@@ -245,25 +350,47 @@ const ClubLogo: React.FC<{
 
 const LoginForm: React.FC<{
   onSubmit: (data: LoginFormData) => Promise<void>;
+  onRegister: (data: LoginFormData & { username: string }) => Promise<void>;
+  onConfirm: (email: string, code: string) => Promise<void>;
   isLoading: boolean;
-}> = ({ onSubmit, isLoading }) => {
+}> = ({ onSubmit, onRegister, onConfirm, isLoading }) => {
   const [formData, setFormData] = useState<LoginFormData>({ email: '', password: '' });
+  const [username, setUsername] = useState<string>('');
+  const [confirmationCode, setConfirmationCode] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [mode, setMode] = useState<'login' | 'register' | 'confirm'>('login');
+  const [pendingEmail, setPendingEmail] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError('');
     
-    const validationError = validateLoginForm(formData.email, formData.password);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
     try {
-      await onSubmit(formData);
+      if (mode === 'confirm') {
+        await onConfirm(pendingEmail, confirmationCode);
+      } else if (mode === 'register') {
+        const validationError = validateLoginForm(formData.email, formData.password);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        if (!username) {
+          setError('Por favor ingresa tu nombre de usuario');
+          return;
+        }
+        setPendingEmail(formData.email);
+        await onRegister({ ...formData, username });
+        setMode('confirm');
+      } else {
+        const validationError = validateLoginForm(formData.email, formData.password);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        await onSubmit(formData);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
+      setError(err instanceof Error ? err.message : 'Error en la autenticación');
     }
   };
 
@@ -291,42 +418,110 @@ const LoginForm: React.FC<{
         </div>
       )}
       
-      <div className="input-group">
-        <label htmlFor="email">Email corporativo:</label>
-        <input 
-          type="email" 
-          id="email" 
-          value={formData.email}
-          onChange={handleInputChange('email')}
-          placeholder="tu-usuario@amazon.com" 
-          required 
-          disabled={isLoading}
-        />
+      <div style={{
+        background: 'rgba(0, 245, 160, 0.1)',
+        border: '1px solid rgba(0, 245, 160, 0.3)',
+        borderRadius: '12px',
+        padding: '15px',
+        marginBottom: '20px',
+        textAlign: 'center'
+      }}>
+        <p style={{ color: '#00F5A0', fontSize: '0.9rem', margin: 0 }}>
+          🔒 Solo empleados de Amazon (@amazon.com)
+        </p>
       </div>
-      
-      <div className="input-group">
-        <label htmlFor="password">Contraseña:</label>
-        <input 
-          type="password" 
-          id="password" 
-          value={formData.password}
-          onChange={handleInputChange('password')}
-          placeholder="••••••••" 
-          required 
-          disabled={isLoading}
-        />
-      </div>
+
+      {mode === 'confirm' ? (
+        <div className="input-group">
+          <label htmlFor="code">Código de verificación:</label>
+          <input 
+            type="text" 
+            id="code" 
+            value={confirmationCode}
+            onChange={(e) => setConfirmationCode(e.target.value)}
+            placeholder="123456" 
+            required 
+            disabled={isLoading}
+          />
+          <p style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '5px' }}>
+            Revisa tu email: {pendingEmail}
+          </p>
+        </div>
+      ) : (
+        <>
+          {mode === 'register' && (
+            <div className="input-group">
+              <label htmlFor="username">Nombre de usuario:</label>
+              <input 
+                type="text" 
+                id="username" 
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="tu-alias" 
+                required 
+                disabled={isLoading}
+              />
+            </div>
+          )}
+          
+          <div className="input-group">
+            <label htmlFor="email">Email corporativo:</label>
+            <input 
+              type="email" 
+              id="email" 
+              value={formData.email}
+              onChange={handleInputChange('email')}
+              placeholder="tu-usuario@amazon.com" 
+              required 
+              disabled={isLoading}
+            />
+          </div>
+          
+          <div className="input-group">
+            <label htmlFor="password">Contraseña:</label>
+            <input 
+              type="password" 
+              id="password" 
+              value={formData.password}
+              onChange={handleInputChange('password')}
+              placeholder="••••••••" 
+              required 
+              disabled={isLoading}
+            />
+          </div>
+        </>
+      )}
       
       <button type="submit" disabled={isLoading} className="btn">
         {isLoading ? (
           <>
             <LoadingSpinner size="small" />
-            Iniciando sesión...
+            {mode === 'confirm' ? 'Verificando...' : mode === 'register' ? 'Registrando...' : 'Iniciando sesión...'}
           </>
         ) : (
-          '✅ Iniciar Sesión'
+          mode === 'confirm' ? '✅ Verificar Código' : mode === 'register' ? '📝 Registr****' : '✅ Iniciar Sesión'
         )}
       </button>
+
+      {mode !== 'confirm' && (
+        <div style={{ textAlign: 'center', marginTop: '15px' }}>
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'register' ? 'login' : 'register')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#00D9F5',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              fontSize: '0.9rem'
+            }}
+            disabled={isLoading}
+          >
+            {mode === 'register' ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'}
+          </button>
+        </div>
+      )}
     </form>
   );
 };
@@ -364,6 +559,131 @@ const Modal: React.FC<{
   );
 };
 
+// AuthProvider usando fetch directo
+const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [userName, setUserName] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [userAlias, setUserAlias] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  
+  const authService = new CognitoAuthService();
+
+  // Verificar sesión existente al cargar
+  useEffect(() => {
+    checkExistingSession();
+  }, []);
+
+  const checkExistingSession = () => {
+    const savedSession = localStorage.getItem('cognitoSession');
+    if (savedSession) {
+      try {
+        const session = JSON.parse(savedSession);
+        const loginTime = new Date(session.loginTime);
+        const now = new Date();
+        const hoursSinceLogin = (now.getTime() - loginTime.getTime()) / (1000 * 60 * 60);
+        
+        // Sesión válida por 8 horas
+        if (hoursSinceLogin < 8) {
+          setIsLoggedIn(true);
+          setUserName(session.userName);
+          setUserEmail(session.userEmail);
+          setUserAlias(session.userAlias);
+        } else {
+          localStorage.removeItem('cognitoSession');
+        }
+      } catch (error) {
+        console.error('Error loading session:', error);
+        localStorage.removeItem('cognitoSession');
+      }
+    }
+  };
+
+  const login = async (email: string, password: string): Promise<void> => {
+    setIsLoading(true);
+    
+    try {
+      const result = await authService.signIn(email, password);
+      
+      if (result.AuthenticationResult) {
+        const alias = extractAliasFromEmail(email);
+        
+        setIsLoggedIn(true);
+        setUserEmail(email);
+        setUserName(alias);
+        setUserAlias(alias);
+        
+        // Guardar sesión
+        const sessionData = {
+          userName: alias,
+          userEmail: email,
+          userAlias: alias,
+          loginTime: new Date().toISOString(),
+          tokens: result.AuthenticationResult
+        };
+        localStorage.setItem('cognitoSession', JSON.stringify(sessionData));
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      throw new Error(error.message || 'Error al iniciar sesión');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (email: string, password: string, username: string): Promise<void> => {
+    setIsLoading(true);
+    
+    try {
+      await authService.signUp(email, password, username);
+      // El usuario necesitará confirmar su email
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      throw new Error(error.message || 'Error al registr****');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const confirmSignUp = async (email: string, code: string): Promise<void> => {
+    setIsLoading(true);
+    
+    try {
+      await authService.confirmSignUp(email, code);
+      // Después de confirmar, hacer login automático sería ideal
+      // pero requeriría guardar la contraseña temporalmente
+    } catch (error: any) {
+      console.error('Confirmation error:', error);
+      throw new Error(error.message || 'Error al confirmar registro');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = (): void => {
+    setIsLoggedIn(false);
+    setUserName('');
+    setUserEmail('');
+    setUserAlias('');
+    localStorage.removeItem('cognitoSession');
+  };
+
+  return (
+    <AuthContext.Provider value={{ 
+      isLoggedIn, 
+      userName, 
+      userEmail, 
+      userAlias, 
+      login, 
+      register,
+      logout, 
+      isLoading 
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
 const HomePage: React.FC = () => {
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -376,7 +696,7 @@ const HomePage: React.FC = () => {
     completionRate: 0
   });
   const [isLoadingRanking, setIsLoadingRanking] = useState<boolean>(true);
-  const { isLoggedIn, userName, userEmail, login, logout, isLoading: authLoading } = useAuth();
+  const { isLoggedIn, userName, userEmail, login, register, logout, isLoading: authLoading } = useAuth();
 
   const loadRankingData = useCallback(async () => {
     try {
@@ -408,6 +728,18 @@ const HomePage: React.FC = () => {
     await login(formData.email, formData.password);
     setShowLoginModal(false);
     setTimeout(loadRankingData, 1000);
+  };
+
+  const handleRegister = async (formData: LoginFormData & { username: string }): Promise<void> => {
+    await register(formData.email, formData.password, formData.username);
+    // No cerrar modal, esperar confirmación
+  };
+
+  const handleConfirm = async (email: string, code: string): Promise<void> => {
+    const authService = new CognitoAuthService();
+    await authService.confirmSignUp(email, code);
+    setShowLoginModal(false);
+    alert('¡Registro confirmado! Ahora puedes iniciar sesión.');
   };
 
   const handleQuizClick = (): void => {
@@ -508,12 +840,14 @@ const HomePage: React.FC = () => {
       {/* Login Modal */}
       <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)}>
         <div className="login-container">
-          <h2>🔐 Iniciar Sesión</h2>
-          <p>Inicia sesión para participar en el quiz</p>
-          <LoginForm onSubmit={handleLogin} isLoading={authLoading} />
-          <div className="login-help">
-            <small>¿Problemas para acceder? Contacta IT Support</small>
-          </div>
+          <h2>🔐 Acceso Amazon</h2>
+          <p>Inicia sesión con tu cuenta de Amazon</p>
+          <LoginForm 
+            onSubmit={handleLogin} 
+            onRegister={handleRegister}
+            onConfirm={handleConfirm}
+            isLoading={authLoading} 
+          />
         </div>
       </Modal>
 
@@ -851,95 +1185,6 @@ const HomePage: React.FC = () => {
         <p>Developed for football and tech enthusiasts</p>
       </footer>
     </div>
-  );
-};
-
-// Auth Provider Component
-const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  const [userName, setUserName] = useState<string>('');
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [userAlias, setUserAlias] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-
-  useEffect(() => {
-    const savedSession = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (savedSession) {
-      try {
-        const session = JSON.parse(savedSession);
-        const loginTime = new Date(session.loginTime);
-        const now = new Date();
-        const hoursSinceLogin = (now.getTime() - loginTime.getTime()) / (1000 * 60 * 60);
-        
-        if (hoursSinceLogin < 24) {
-          setIsLoggedIn(true);
-          setUserName(session.userName);
-          setUserEmail(session.userEmail);
-          setUserAlias(session.userAlias);
-        } else {
-          localStorage.removeItem(SESSION_STORAGE_KEY);
-        }
-      } catch (error) {
-        console.error('Error loading session:', error);
-        localStorage.removeItem(SESSION_STORAGE_KEY);
-      }
-    }
-  }, []);
-
-  const login = async (email: string, password: string): Promise<void> => {
-    setIsLoading(true);
-    
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const validationError = validateLoginForm(email, password);
-      if (validationError) {
-        throw new Error(validationError);
-      }
-
-      const alias = extractAliasFromEmail(email);
-      const userName = alias;
-      
-      setUserEmail(email);
-      setUserName(userName);
-      setUserAlias(alias);
-      setIsLoggedIn(true);
-      
-      const sessionData = {
-        userName,
-        userEmail: email,
-        userAlias: alias,
-        loginTime: new Date().toISOString()
-      };
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
-      
-    } catch (error) {
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const logout = (): void => {
-    setIsLoggedIn(false);
-    setUserName('');
-    setUserEmail('');
-    setUserAlias('');
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-  };
-
-  return (
-    <AuthContext.Provider value={{ 
-      isLoggedIn, 
-      userName, 
-      userEmail, 
-      userAlias, 
-      login, 
-      logout, 
-      isLoading 
-    }}>
-      {children}
-    </AuthContext.Provider>
   );
 };
 
