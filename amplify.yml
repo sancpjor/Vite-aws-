@@ -3,8 +3,7 @@ backend:
   phases:
     build:
       commands:
-        - npm install --cache .npm --prefer-offline
-        - npx @aws-amplify/cli@latest push --yes
+        - echo "No backend build required"
 frontend:
   phases:
     preBuild:

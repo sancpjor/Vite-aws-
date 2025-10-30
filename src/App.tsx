@@ -3,6 +3,15 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-ro
 import Quiz from './components/Quiz';
 import { getLeaderboard, getStats } from './services/quizAPI';
 
+// Rutas de imágenes (ahora en public/)
+const AWSLogo = '/images/Amazon_Web_Services_Logo.svg.png';
+const RealZaragozaLogo = '/images/RealZaragoza.png';
+const SDHuescaLogo = '/images/SDHuesca.png';
+const ZAZClusterLogo = '/images/ZAZCluster.png';
+const BackgroundImage = '/images/background.png';
+const SponsorHuescaLogo = '/images/sponsorhuesca.png';
+const SponsorZaragozaLogo = '/images/sponsorzaragoza.png';
+
 // Types
 interface AuthContextType {
   isLoggedIn: boolean;
@@ -176,6 +185,59 @@ const FastAvatar: React.FC<{
   );
 };
 
+const ClubLogo: React.FC<{
+  src: string;
+  alt: string;
+  fallbackColor: string;
+  clubName: string;
+}> = ({ src, alt, fallbackColor, clubName }) => {
+  const [imageError, setImageError] = useState(false);
+
+  if (imageError) {
+    return (
+      <div style={{
+        width: '80px',
+        height: '80px',
+        background: fallbackColor,
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        margin: '0 auto 15px auto',
+        fontSize: '1.5rem',
+        fontWeight: 'bold',
+        color: '#1a1a1a',
+        border: `3px solid ${fallbackColor}`
+      }}>
+        {clubName.substring(0, 2)}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      width: '80px',
+      height: '80px',
+      margin: '0 auto 15px auto',
+      borderRadius: '50%',
+      overflow: 'hidden',
+      border: `3px solid ${fallbackColor}`,
+      background: 'white'
+    }}>
+      <img 
+        src={src}
+        alt={alt}
+        style={{ 
+          width: '100%', 
+          height: '100%', 
+          objectFit: 'cover' 
+        }}
+        onError={() => setImageError(true)}
+      />
+    </div>
+  );
+};
+
 const LoginForm: React.FC<{
   onSubmit: (data: LoginFormData) => Promise<void>;
   isLoading: boolean;
@@ -204,7 +266,7 @@ const LoginForm: React.FC<{
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     setFormData(prev => ({ ...prev, [field]: e.target.value }));
-    if (error) setError(''); // Clear error when user starts typing
+    if (error) setError('');
   };
 
   return (
@@ -484,9 +546,13 @@ const HomePage: React.FC = () => {
   };
 
   return (
-    <div className="container">
+    <div className="container" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <header className="header">
-        <div className="auth-section">
+        <div className="auth-section" style={{ 
+          display: 'flex', 
+          justifyContent: 'flex-end', 
+          marginBottom: '20px' 
+        }}>
           {isLoggedIn ? (
             <div className="user-info-header" style={{
               display: 'flex',
@@ -536,6 +602,27 @@ const HomePage: React.FC = () => {
               {authLoading ? 'Cargando...' : 'Iniciar Sesión'}
             </button>
           )}
+        </div>
+        
+        {/* Logo principal con AWS y ZAZ */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          gap: '20px',
+          marginBottom: '20px',
+          flexWrap: 'wrap'
+        }}>
+          <img 
+            src={AWSLogo} 
+            alt="AWS Logo" 
+            style={{ height: '60px', objectFit: 'contain' }}
+          />
+          <img 
+            src={ZAZClusterLogo} 
+            alt="ZAZ Cluster" 
+            style={{ height: '80px', objectFit: 'contain' }}
+          />
         </div>
         
         <h1 style={{ 
@@ -595,7 +682,7 @@ const HomePage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Rest of your existing components with improved styling */}
+      {/* Sección de clubes con imágenes */}
       <section className="clubs-section" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -608,25 +695,32 @@ const HomePage: React.FC = () => {
           padding: '25px',
           textAlign: 'center',
           border: '1px solid rgba(255, 255, 255, 0.2)',
-          transition: 'all 0.3s ease'
+          transition: 'all 0.3s ease',
+          backdropFilter: 'blur(10px)'
         }}>
-          <div className="club-logo" style={{
-            width: '60px',
-            height: '60px',
-            background: 'linear-gradient(45deg, #00F5A0, #00D9F5)',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 15px auto',
-            fontSize: '1.5rem',
-            fontWeight: 'bold',
-            color: '#1a1a1a'
-          }}>
-            RZ
-          </div>
+          <ClubLogo
+            src={RealZaragozaLogo}
+            alt="Real Zaragoza"
+            fallbackColor="#00F5A0"
+            clubName="Real Zaragoza"
+          />
           <h3 style={{ color: '#00F5A0', marginBottom: '10px' }}>Real Zaragoza</h3>
-          <p style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Test your knowledge about the team</p>
+          <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '15px' }}>
+            Test your knowledge about the team
+          </p>
+          
+          {/* Sponsor logo */}
+          <div style={{ marginTop: '15px' }}>
+            <img 
+              src={SponsorZaragozaLogo} 
+              alt="Sponsor Zaragoza" 
+              style={{ 
+                height: '30px', 
+                objectFit: 'contain',
+                opacity: 0.8
+              }}
+            />
+          </div>
         </div>
         
         <div className="club-card huesca" style={{
@@ -635,25 +729,32 @@ const HomePage: React.FC = () => {
           padding: '25px',
           textAlign: 'center',
           border: '1px solid rgba(255, 255, 255, 0.2)',
-          transition: 'all 0.3s ease'
+          transition: 'all 0.3s ease',
+          backdropFilter: 'blur(10px)'
         }}>
-          <div className="club-logo" style={{
-            width: '60px',
-            height: '60px',
-            background: 'linear-gradient(45deg, #FFD700, #FFA500)',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 15px auto',
-            fontSize: '1.2rem',
-            fontWeight: 'bold',
-            color: '#1a1a1a'
-          }}>
-            SDH
-          </div>
+          <ClubLogo
+            src={SDHuescaLogo}
+            alt="SD Huesca"
+            fallbackColor="#FFD700"
+            clubName="SD Huesca"
+          />
           <h3 style={{ color: '#FFD700', marginBottom: '10px' }}>SD Huesca</h3>
-          <p style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Learn about the local rival</p>
+          <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '15px' }}>
+            Learn about the local rival
+          </p>
+          
+          {/* Sponsor logo */}
+          <div style={{ marginTop: '15px' }}>
+            <img 
+              src={SponsorHuescaLogo} 
+              alt="Sponsor Huesca" 
+              style={{ 
+                height: '30px', 
+                objectFit: 'contain',
+                opacity: 0.8
+              }}
+            />
+          </div>
         </div>
       </section>
 
@@ -1035,6 +1136,32 @@ const HomePage: React.FC = () => {
         borderTop: '1px solid rgba(255, 255, 255, 0.1)',
         marginTop: '40px'
       }}>
+        {/* Logos en el footer */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          gap: '30px',
+          marginBottom: '20px',
+          flexWrap: 'wrap'
+        }}>
+          <img 
+            src={AWSLogo} 
+            alt="AWS" 
+            style={{ height: '40px', objectFit: 'contain', opacity: 0.8 }}
+          />
+          <img 
+            src={RealZaragozaLogo} 
+            alt="Real Zaragoza" 
+            style={{ height: '40px', objectFit: 'contain', opacity: 0.8 }}
+          />
+          <img 
+            src={SDHuescaLogo} 
+            alt="SD Huesca" 
+            style={{ height: '40px', objectFit: 'contain', opacity: 0.8 }}
+          />
+        </div>
+        
         <p style={{ marginBottom: '10px', color: 'rgba(255, 255, 255, 0.8)' }}>
           © 2025 ZAZ Football Quiz | Test your knowledge about football, AWS, and Aragon
         </p>
@@ -1156,31 +1283,14 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <Router>
-        {/* Video Background */}
-        <video
-          autoPlay
-          muted
-          loop
-          playsInline
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            zIndex: -1
-          }}
-        >
-          <source src="/videos/background-video.mov" type="video/quicktime" />
-          <source src="/videos/background-video.mp4" type="video/mp4" />
-        </video>
-
         <div className="App" style={{
           minHeight: '100vh',
           position: 'relative',
           color: 'white',
-          background: 'transparent'
+          backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url(${BackgroundImage})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed'
         }}>
           <Routes>
             <Route path="/" element={<HomePage />} />
