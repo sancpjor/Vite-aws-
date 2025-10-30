@@ -1,4 +1,4 @@
-// App.tsx - ARCHIVO COMPLETO
+// App.tsx - ARCHIVO COMPLETO CON COGNITO REAL
 import React, { useState, createContext, useContext, useEffect, useCallback } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Quiz from './components/Quiz';
@@ -19,7 +19,7 @@ interface AuthContextType {
   userName: string;
   userEmail: string;
   userAlias: string;
-  login: (email?: string, password?: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, username: string) => Promise<void>;
   confirmSignUp: (email: string, code: string) => Promise<void>;
   logout: () => void;
@@ -55,77 +55,35 @@ interface LoginFormData {
 const AMAZON_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@amazon\.(com|co\.uk|de|fr|es|it|ca|com\.au|co\.jp)$/;
 const LEADERBOARD_REFRESH_INTERVAL = 30000;
 
-// Federate Auth Service
-class FederateAuthService {
+// CognitoAuthService - SERVICIO REAL
+class CognitoAuthService {
   private config = {
     userPoolId: 'eu-west-3_lHUi9pWBS',
-    clientId: 'playzaz-federate-oidc',
-    region: 'eu-west-3',
-    domain: 'playzaz-federate.auth.eu-west-3.amazoncognito.com'
+    clientId: '5ih9lsr8cv6gpvtblpar1sndf3',
+    region: 'eu-west-3'
   };
 
-  // Redirigir a Federate para login
-  initiateLogin(): void {
-    const authUrl = new URL(`https://${this.config.domain}/oauth2/authorize`);
-    authUrl.searchParams.append('client_id', this.config.clientId);
-    authUrl.searchParams.append('redirect_uri', window.location.origin + '/auth/callback');
-    authUrl.searchParams.append('response_type', 'code');
-    authUrl.searchParams.append('scope', 'openid email profile');
-    authUrl.searchParams.append('state', this.generateState());
-    
-    console.log('🚀 Redirigiendo a Federate:', authUrl.toString());
-    window.location.href = authUrl.toString();
+  constructor() {
+    console.log('🔧 CognitoAuthService inicializado con configuración real');
+    console.log('📋 User Pool:', this.config.userPoolId);
+    console.log('🔑 Client ID:', this.config.clientId);
+    console.log('🌍 Region:', this.config.region);
   }
 
-  // Procesar callback de Federate
-  async handleCallback(code: string, state: string): Promise<any> {
-    console.log('🔄 Procesando callback de Federate...');
+  async signIn(email: string, password: string): Promise<any> {
+    console.log('🔐 Iniciando login con Cognito real...', email);
     
-    try {
-      // Intercambiar código por tokens
-      const tokenResponse = await fetch(`https://${this.config.domain}/oauth2/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: this.config.clientId,
-          code: code,
-          redirect_uri: window.location.origin + '/auth/callback',
-        }),
-      });
-
-      if (!tokenResponse.ok) {
-        const error = await tokenResponse.text();
-        throw new Error(`Token exchange failed: ${error}`);
-      }
-
-      const tokens = await tokenResponse.json();
-      console.log('✅ Tokens obtenidos de Federate');
-      
-      // Decodificar JWT para obtener información del usuario
-      const userInfo = this.decodeJWT(tokens.id_token);
-      console.log('👤 Información del usuario:', userInfo);
-      
-      return {
-        AuthenticationResult: tokens,
-        user: {
-          email: userInfo.email,
-          alias: userInfo.preferred_username || userInfo.email?.split('@')[0],
-          name: userInfo.name || userInfo.preferred_username,
-          groups: userInfo['cognito:groups'] || []
-        }
-      };
-    } catch (error) {
-      console.error('❌ Error en callback de Federate:', error);
-      throw error;
+    // Validar dominio Amazon
+    const amazonDomains = [
+      '@amazon.com', '@amazon.co.uk', '@amazon.de', 
+      '@amazon.fr', '@amazon.es', '@amazon.it',
+      '@amazon.ca', '@amazon.com.au', '@amazon.co.jp'
+    ];
+    
+    const isAmazonEmail = amazonDomains.some(domain => email.endsWith(domain));
+    if (!isAmazonEmail) {
+      throw new Error('Solo empleados de Amazon pueden acceder. Usa tu email corporativo (@amazon.com)');
     }
-  }
-
-  // Login directo con usuario/contraseña (para desarrollo)
-  async signInDirect(email: string, password: string): Promise<any> {
-    console.log('🔐 Login directo con Cognito...');
     
     try {
       const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
@@ -133,6 +91,7 @@ class FederateAuthService {
         headers: {
           'Content-Type': 'application/x-amz-json-1.1',
           'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
+          'X-Amz-User-Agent': 'aws-amplify/5.0.0'
         },
         body: JSON.stringify({
           ClientId: this.config.clientId,
@@ -144,31 +103,86 @@ class FederateAuthService {
         }),
       });
 
+      const result = await response.json();
+      
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Error al iniciar sesión');
+        console.error('❌ Error response from Cognito:', result);
+        
+        // Manejar errores específicos de Cognito
+        switch (result.__type) {
+          case 'NotAuthorizedException':
+            throw new Error('Email o contraseña incorrectos');
+          case 'UserNotConfirmedException':
+            throw new Error('Usuario no confirmado. Revisa tu email para el código de verificación');
+          case 'UserNotFoundException':
+            throw new Error('Usuario no encontrado. ¿Te has registrado?');
+          case 'TooManyRequestsException':
+            throw new Error('Demasiados intentos. Espera un momento antes de intentar de nuevo');
+          case 'InvalidParameterException':
+            throw new Error('Parámetros inválidos. Verifica tu email y contraseña');
+          case 'ResourceNotFoundException':
+            throw new Error('Configuración de autenticación no encontrada');
+          default:
+            throw new Error(result.message || result.__type || 'Error al iniciar sesión');
+        }
       }
 
-      const result = await response.json();
-      console.log('✅ Login directo exitoso');
+      console.log('✅ Login exitoso con Cognito real');
+      
+      // Decodificar información del usuario del ID token
+      let userInfo = {
+        email: email,
+        alias: email.split('@')[0],
+        name: email.split('@')[0]
+      };
+
+      if (result.AuthenticationResult?.IdToken) {
+        try {
+          const decodedToken = this.decodeJWT(result.AuthenticationResult.IdToken);
+          userInfo = {
+            email: decodedToken.email || email,
+            alias: decodedToken.preferred_username || decodedToken['cognito:username'] || email.split('@')[0],
+            name: decodedToken.name || decodedToken.preferred_username || email.split('@')[0]
+          };
+          console.log('👤 Información del usuario decodificada:', userInfo);
+        } catch (decodeError) {
+          console.warn('⚠️ No se pudo decodificar el token, usando datos básicos');
+        }
+      }
       
       return {
         AuthenticationResult: result.AuthenticationResult,
-        user: {
-          email: email,
-          alias: email.split('@')[0],
-          name: email.split('@')[0]
-        }
+        user: userInfo
       };
     } catch (error) {
-      console.error('❌ Error en login directo:', error);
-      throw error;
+      if (error.message) {
+        throw error; // Re-throw errors we've already handled
+      }
+      
+      console.error('❌ Error de red o conexión:', error);
+      throw new Error('Error de conexión. Verifica tu conexión a internet y vuelve a intentar');
     }
   }
 
-  // Registro de usuario
   async signUp(email: string, password: string, username: string): Promise<any> {
-    console.log('📝 Registrando usuario en Cognito...');
+    console.log('📝 Iniciando registro con Cognito real...', email);
+    
+    // Validar dominio Amazon
+    const amazonDomains = [
+      '@amazon.com', '@amazon.co.uk', '@amazon.de', 
+      '@amazon.fr', '@amazon.es', '@amazon.it',
+      '@amazon.ca', '@amazon.com.au', '@amazon.co.jp'
+    ];
+    
+    const isAmazonEmail = amazonDomains.some(domain => email.endsWith(domain));
+    if (!isAmazonEmail) {
+      throw new Error('Solo empleados de Amazon pueden registrarse. Usa tu email corporativo (@amazon.com)');
+    }
+
+    // Validar contraseña
+    if (password.length < 8) {
+      throw new Error('La contraseña debe tener al menos 8 caracteres');
+    }
     
     try {
       const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
@@ -176,6 +190,7 @@ class FederateAuthService {
         headers: {
           'Content-Type': 'application/x-amz-json-1.1',
           'X-Amz-Target': 'AWSCognitoIdentityProviderService.SignUp',
+          'X-Amz-User-Agent': 'aws-amplify/5.0.0'
         },
         body: JSON.stringify({
           ClientId: this.config.clientId,
@@ -188,23 +203,54 @@ class FederateAuthService {
         }),
       });
 
+      const result = await response.json();
+      
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Error al registrarse');
+        console.error('❌ Error response from Cognito SignUp:', result);
+        
+        // Manejar errores específicos de registro
+        switch (result.__type) {
+          case 'UsernameExistsException':
+            throw new Error('Este email ya está registrado. ¿Quieres iniciar sesión?');
+          case 'InvalidPasswordException':
+            throw new Error('Contraseña inválida. Debe tener al menos 8 caracteres con mayúsculas, minúsculas y números');
+          case 'InvalidParameterException':
+            throw new Error('Parámetros inválidos. Verifica tu email y contraseña');
+          case 'TooManyRequestsException':
+            throw new Error('Demasiados intentos. Espera un momento antes de intentar de nuevo');
+          case 'LimitExceededException':
+            throw new Error('Límite de intentos excedido. Intenta más tarde');
+          default:
+            throw new Error(result.message || result.__type || 'Error al registrarse');
+        }
       }
 
-      const result = await response.json();
-      console.log('✅ Usuario registrado, requiere confirmación');
-      return result;
+      console.log('✅ Usuario registrado exitosamente en Cognito real');
+      console.log('📧 Código de confirmación enviado a:', email);
+      
+      return {
+        UserSub: result.UserSub,
+        CodeDeliveryDetails: result.CodeDeliveryDetails || {
+          Destination: email,
+          DeliveryMedium: 'EMAIL'
+        }
+      };
     } catch (error) {
-      console.error('❌ Error en registro:', error);
-      throw error;
+      if (error.message) {
+        throw error; // Re-throw errors we've already handled
+      }
+      
+      console.error('❌ Error de red en registro:', error);
+      throw new Error('Error de conexión durante el registro. Verifica tu conexión a internet');
     }
   }
 
-  // Confirmar registro
   async confirmSignUp(email: string, code: string): Promise<any> {
-    console.log('✉️ Confirmando registro...');
+    console.log('✉️ Confirmando registro en Cognito real...', email);
+    
+    if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+      throw new Error('El código debe ser de 6 dígitos numéricos');
+    }
     
     try {
       const response = await fetch(`https://cognito-idp.${this.config.region}.amazonaws.com/`, {
@@ -212,6 +258,7 @@ class FederateAuthService {
         headers: {
           'Content-Type': 'application/x-amz-json-1.1',
           'X-Amz-Target': 'AWSCognitoIdentityProviderService.ConfirmSignUp',
+          'X-Amz-User-Agent': 'aws-amplify/5.0.0'
         },
         body: JSON.stringify({
           ClientId: this.config.clientId,
@@ -220,43 +267,79 @@ class FederateAuthService {
         }),
       });
 
+      const result = await response.json();
+      
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Error al confirmar registro');
+        console.error('❌ Error response from Cognito ConfirmSignUp:', result);
+        
+        // Manejar errores específicos de confirmación
+        switch (result.__type) {
+          case 'CodeMismatchException':
+            throw new Error('Código incorrecto. Verifica el código enviado a tu email');
+          case 'ExpiredCodeException':
+            throw new Error('El código ha expirado. Solicita un nuevo código');
+          case 'UserNotFoundException':
+            throw new Error('Usuario no encontrado. ¿Te registraste correctamente?');
+          case 'NotAuthorizedException':
+            throw new Error('Usuario ya confirmado o código inválido');
+          case 'TooManyFailedAttemptsException':
+            throw new Error('Demasiados intentos fallidos. Espera antes de intentar de nuevo');
+          case 'LimitExceededException':
+            throw new Error('Límite de intentos excedido. Intenta más tarde');
+          default:
+            throw new Error(result.message || result.__type || 'Error al confirmar registro');
+        }
       }
 
-      console.log('✅ Registro confirmado');
-      return await response.json();
+      console.log('✅ Registro confirmado exitosamente en Cognito real');
+      return result;
     } catch (error) {
-      console.error('❌ Error confirmando registro:', error);
-      throw error;
+      if (error.message) {
+        throw error; // Re-throw errors we've already handled
+      }
+      
+      console.error('❌ Error de red en confirmación:', error);
+      throw new Error('Error de conexión durante la confirmación. Verifica tu conexión a internet');
     }
   }
 
-  // Utilidades
-  private generateState(): string {
-    const state = Math.random().toString(36).substring(2, 15);
-    sessionStorage.setItem('federate_state', state);
-    return state;
-  }
-
+  // Utilidades privadas
   private decodeJWT(token: string): any {
     try {
       const base64Url = token.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map(function(c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+          })
+          .join('')
+      );
       
       return JSON.parse(jsonPayload);
     } catch (error) {
       console.error('Error decodificando JWT:', error);
-      throw new Error('Invalid JWT token');
+      throw new Error('Token JWT inválido');
     }
+  }
+
+  // Método para verificar si el servicio está configurado correctamente
+  isConfigured(): boolean {
+    return !!(this.config.userPoolId && this.config.clientId && this.config.region);
+  }
+
+  // Método para obtener la configuración actual
+  getConfig() {
+    return {
+      userPoolId: this.config.userPoolId,
+      clientId: this.config.clientId,
+      region: this.config.region
+    };
   }
 }
 
-const federateAuthService = new FederateAuthService();
+const cognitoAuthService = new CognitoAuthService();
 
 // Auth Context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -448,9 +531,9 @@ const ClubLogo: React.FC<{
   );
 };
 
-// LoginForm Component - VA AQUÍ
+// LoginForm Component - SIN FEDERATE, SOLO COGNITO
 const LoginForm: React.FC<{
-  onSubmit: (data?: LoginFormData) => Promise<void>;
+  onSubmit: (data: LoginFormData) => Promise<void>;
   onRegister: (data: LoginFormData & { username: string }) => Promise<void>;
   onConfirm: (email: string, code: string) => Promise<void>;
   isLoading: boolean;
@@ -459,7 +542,7 @@ const LoginForm: React.FC<{
   const [username, setUsername] = useState<string>('');
   const [confirmationCode, setConfirmationCode] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const [mode, setMode] = useState<'login' | 'register' | 'confirm' | 'federate'>('federate');
+  const [mode, setMode] = useState<'login' | 'register' | 'confirm'>('login');
   const [pendingEmail, setPendingEmail] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -467,10 +550,10 @@ const LoginForm: React.FC<{
     setError('');
     
     try {
-      if (mode === 'federate') {
-        await onSubmit(); // Sin parámetros = Federate
-      } else if (mode === 'confirm') {
+      if (mode === 'confirm') {
         await onConfirm(pendingEmail, confirmationCode);
+        setMode('login'); // Volver al login después de confirmar
+        alert('¡Registro confirmado! Ahora puedes iniciar sesión.');
       } else if (mode === 'register') {
         const validationError = validateLoginForm(formData.email, formData.password);
         if (validationError) {
@@ -530,56 +613,9 @@ const LoginForm: React.FC<{
         textAlign: 'center'
       }}>
         <p style={{ color: '#00F5A0', fontSize: '0.9rem', margin: 0 }}>
-          🔒 Solo empleados de Amazon (@amazon.com)
+          🔒 Autenticación real con AWS Cognito
         </p>
       </div>
-
-      {mode === 'federate' && (
-        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="btn"
-            style={{ marginBottom: '15px', width: '100%' }}
-          >
-            {isLoading ? (
-              <>
-                <LoadingSpinner size="small" />
-                Redirecting to Federate...
-              </>
-            ) : (
-              '🚀 Login with Amazon Federate'
-            )}
-          </button>
-          
-          <div style={{ 
-            textAlign: 'center',
-            margin: '15px 0',
-            color: 'rgba(255, 255, 255, 0.6)',
-            fontSize: '0.9rem'
-          }}>
-            ── OR ──
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setMode('login')}
-            style={{
-              background: 'none',
-              border: '1px solid rgba(0, 217, 245, 0.5)',
-              color: '#00D9F5',
-              cursor: 'pointer',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              fontSize: '0.9rem',
-              transition: 'all 0.3s ease'
-            }}
-            disabled={isLoading}
-          >
-            🔐 Direct Login (Development)
-          </button>
-        </div>
-      )}
 
       {mode === 'confirm' && (
         <div className="input-group">
@@ -592,9 +628,10 @@ const LoginForm: React.FC<{
             placeholder="123456" 
             required 
             disabled={isLoading}
+            maxLength={6}
           />
           <p style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '5px' }}>
-            Revisa tu email: {pendingEmail}
+            📧 Revisa tu email: {pendingEmail}
           </p>
         </div>
       )}
@@ -639,23 +676,22 @@ const LoginForm: React.FC<{
               placeholder="••••••••" 
               required 
               disabled={isLoading}
+              minLength={8}
             />
           </div>
         </>
       )}
       
-      {mode !== 'federate' && (
-        <button type="submit" disabled={isLoading} className="btn">
-          {isLoading ? (
-            <>
-              <LoadingSpinner size="small" />
-              {mode === 'confirm' ? 'Verificando...' : mode === 'register' ? 'Registrando...' : 'Iniciando sesión...'}
-            </>
-          ) : (
-            mode === 'confirm' ? '✅ Verificar Código' : mode === 'register' ? '📝 Registrarse' : '✅ Iniciar Sesión'
-          )}
-        </button>
-      )}
+      <button type="submit" disabled={isLoading} className="btn">
+        {isLoading ? (
+          <>
+            <LoadingSpinner size="small" />
+            {mode === 'confirm' ? 'Verificando...' : mode === 'register' ? 'Registrando...' : 'Iniciando sesión...'}
+          </>
+        ) : (
+          mode === 'confirm' ? '✅ Verificar Código' : mode === 'register' ? '📝 Registrarse' : '✅ Iniciar Sesión'
+        )}
+      </button>
 
       {(mode === 'login' || mode === 'register') && (
         <div style={{ textAlign: 'center', marginTop: '15px' }}>
@@ -674,24 +710,25 @@ const LoginForm: React.FC<{
           >
             {mode === 'register' ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'}
           </button>
-          
-          <br />
-          
+        </div>
+      )}
+
+      {mode === 'confirm' && (
+        <div style={{ textAlign: 'center', marginTop: '15px' }}>
           <button
             type="button"
-            onClick={() => setMode('federate')}
+            onClick={() => setMode('login')}
             style={{
               background: 'none',
               border: 'none',
               color: 'rgba(255, 255, 255, 0.6)',
               cursor: 'pointer',
               textDecoration: 'underline',
-              fontSize: '0.8rem',
-              marginTop: '10px'
+              fontSize: '0.8rem'
             }}
             disabled={isLoading}
           >
-            ← Volver a Federate
+            ← Volver al login
           </button>
         </div>
       )}
@@ -701,20 +738,21 @@ const LoginForm: React.FC<{
           textAlign: 'center', 
           marginTop: '20px',
           padding: '15px',
-          background: 'rgba(255, 165, 0, 0.1)',
+          background: 'rgba(0, 217, 245, 0.1)',
           borderRadius: '8px',
-          border: '1px solid rgba(255, 165, 0, 0.3)'
+          border: '1px solid rgba(0, 217, 245, 0.3)'
         }}>
           <p style={{ 
             fontSize: '0.8rem', 
-            color: '#FFA500',
+            color: '#00D9F5',
             margin: '0 0 10px 0',
             fontWeight: 'bold'
           }}>
-            🧪 Modo de desarrollo:
+            🔐 Autenticación con Cognito Real
           </p>
           <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-            <p style={{ margin: '5px 0' }}>Cualquier email @amazon.com + contraseña válida</p>
+            <p style={{ margin: '5px 0' }}>✅ User Pool: eu-west-3_lHUi9pWBS</p>
+            <p style={{ margin: '5px 0' }}>✅ Solo emails @amazon.com</p>
           </div>
         </div>
       )}
@@ -755,7 +793,7 @@ const Modal: React.FC<{
   );
 };
 
-// AuthProvider con Federate
+// AuthProvider con Cognito real
 const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [userName, setUserName] = useState<string>('');
@@ -763,59 +801,23 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const [userAlias, setUserAlias] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Verificar callback de Federate al cargar
+  const authService = cognitoAuthService;
+
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
+    checkExistingSession();
     
-    if (code && state) {
-      handleFederateCallback(code, state);
-    } else {
-      checkExistingSession();
+    // Mostrar información de desarrollo
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🎮 ZAZ Football Quiz - Modo de desarrollo');
+      console.log('🔐 Usando AWS Cognito real');
+      console.log('📋 User Pool:', authService.getConfig().userPoolId);
+      console.log('🔑 Client ID:', authService.getConfig().clientId);
+      console.log('🌍 Region:', authService.getConfig().region);
     }
   }, []);
 
-  const handleFederateCallback = async (code: string, state: string) => {
-    setIsLoading(true);
-    
-    try {
-      const savedState = sessionStorage.getItem('federate_state');
-      if (state !== savedState) {
-        throw new Error('Invalid state parameter');
-      }
-      
-      const result = await federateAuthService.handleCallback(code, state);
-      
-      setIsLoggedIn(true);
-      setUserEmail(result.user.email);
-      setUserName(result.user.name);
-      setUserAlias(result.user.alias);
-      
-      // Guardar sesión
-      const sessionData = {
-        userName: result.user.name,
-        userEmail: result.user.email,
-        userAlias: result.user.alias,
-        loginTime: new Date().toISOString(),
-        tokens: result.AuthenticationResult
-      };
-      localStorage.setItem('federateSession', JSON.stringify(sessionData));
-      
-      // Limpiar URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-      
-    } catch (error) {
-      console.error('Federate authentication failed:', error);
-      alert(`Authentication failed: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-      sessionStorage.removeItem('federate_state');
-    }
-  };
-
   const checkExistingSession = () => {
-    const savedSession = localStorage.getItem('federateSession');
+    const savedSession = localStorage.getItem('cognitoSession');
     if (savedSession) {
       try {
         const session = JSON.parse(savedSession);
@@ -828,46 +830,48 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
           setUserName(session.userName);
           setUserEmail(session.userEmail);
           setUserAlias(session.userAlias);
+          console.log('✅ Sesión restaurada para:', session.userEmail);
         } else {
-          localStorage.removeItem('federateSession');
+          localStorage.removeItem('cognitoSession');
+          console.log('⏰ Sesión expirada, limpiando...');
         }
       } catch (error) {
         console.error('Error loading session:', error);
-        localStorage.removeItem('federateSession');
+        localStorage.removeItem('cognitoSession');
       }
     }
   };
 
-  const login = async (email?: string, password?: string): Promise<void> => {
+  const login = async (email: string, password: string): Promise<void> => {
+    if (!email || !password) {
+      throw new Error('Email y contraseña son requeridos');
+    }
+    
     setIsLoading(true);
     
     try {
-      if (email && password) {
-        // Login directo para desarrollo
-        const result = await federateAuthService.signInDirect(email, password);
-        
-        setIsLoggedIn(true);
-        setUserEmail(result.user.email);
-        setUserName(result.user.name);
-        setUserAlias(result.user.alias);
-        
-        const sessionData = {
-          userName: result.user.name,
-          userEmail: result.user.email,
-          userAlias: result.user.alias,
-          loginTime: new Date().toISOString(),
-          tokens: result.AuthenticationResult
-        };
-        localStorage.setItem('federateSession', JSON.stringify(sessionData));
-        setIsLoading(false);
-      } else {
-        // Redirigir a Federate
-        federateAuthService.initiateLogin();
-        // No setear isLoading(false) aquí porque se redirige
-      }
+      const result = await authService.signIn(email, password);
+      
+      setIsLoggedIn(true);
+      setUserEmail(result.user.email);
+      setUserName(result.user.name);
+      setUserAlias(result.user.alias);
+      
+      const sessionData = {
+        userName: result.user.name,
+        userEmail: result.user.email,
+        userAlias: result.user.alias,
+        loginTime: new Date().toISOString(),
+        tokens: result.AuthenticationResult
+      };
+      localStorage.setItem('cognitoSession', JSON.stringify(sessionData));
+      
+      console.log('✅ Login completado y sesión guardada');
     } catch (error) {
-      setIsLoading(false);
+      console.error('❌ Error en login:', error);
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -875,8 +879,10 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     setIsLoading(true);
     
     try {
-      await federateAuthService.signUp(email, password, username);
+      await authService.signUp(email, password, username);
+      console.log('✅ Registro iniciado, esperando confirmación');
     } catch (error) {
+      console.error('❌ Error en registro:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -887,8 +893,10 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     setIsLoading(true);
     
     try {
-      await federateAuthService.confirmSignUp(email, code);
+      await authService.confirmSignUp(email, code);
+      console.log('✅ Confirmación completada');
     } catch (error) {
+      console.error('❌ Error en confirmación:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -900,7 +908,8 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     setUserName('');
     setUserEmail('');
     setUserAlias('');
-    localStorage.removeItem('federateSession');
+    localStorage.removeItem('cognitoSession');
+    console.log('🚪 Logout completado');
   };
 
   return (
@@ -960,12 +969,9 @@ const HomePage: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadRankingData]);
 
-  const handleLogin = async (formData?: LoginFormData): Promise<void> => {
-    if (formData) {
-      await login(formData.email, formData.password);
-    } else {
-      await login(); // Federate login
-    }
+  // handleLogin actualizado para Cognito
+  const handleLogin = async (formData: LoginFormData): Promise<void> => {
+    await login(formData.email, formData.password);
     setShowLoginModal(false);
     setTimeout(loadRankingData, 1000);
   };
@@ -977,8 +983,7 @@ const HomePage: React.FC = () => {
 
   const handleConfirm = async (email: string, code: string): Promise<void> => {
     await confirmSignUp(email, code);
-    setShowLoginModal(false);
-    alert('¡Registro confirmado! Ahora puedes iniciar sesión.');
+    // El modal se cierra automáticamente en LoginForm
   };
 
   const handleQuizClick = (): void => {
@@ -1076,7 +1081,7 @@ const HomePage: React.FC = () => {
         <p>Test your knowledge about Real Zaragoza and AWS!</p>
       </header>
 
-      {/* Login Modal - AQUÍ SE USA EL LOGINFORM */}
+      {/* Login Modal */}
       <Modal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)}>
         <div className="login-container">
           <h2>🔐 Acceso Amazon</h2>
@@ -1350,7 +1355,7 @@ const HomePage: React.FC = () => {
           <li>🏆 Each correct answer gives you 1 point</li>
           <li>📊 Your final score will be displayed at the end</li>
           <li>🎯 Categories include: Real Zaragoza, SD Huesca, AWS, World Cup, and Aragon</li>
-          <li>🏅 Your score will appear in the ranking if you\'re in the top 10</li>
+          <li>🏅 Your score will appear in the ranking if you're in the top 10</li>
         </ul>
       </section>
 
